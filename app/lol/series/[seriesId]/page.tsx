@@ -146,128 +146,142 @@ export default function SeriesPage() {
     return teamMap.get(teamId)?.name || teamId
   }
 
-  const renderDraftSummary = (game: Game) => {
+  const getTeamSide = (teamId: string): 'blue' | 'red' => {
+    return teamMap.get(teamId)?.side || 'blue'
+  }
+
+  // Group consecutive draft actions by the same team
+  interface DraftGroup {
+    teamId: string
+    type: 'ban' | 'pick'
+    actions: DraftAction[]
+    startSeq: number
+    endSeq: number
+  }
+
+  const groupDraftActions = (actions: DraftAction[]): DraftGroup[] => {
+    if (!actions || actions.length === 0) return []
+
+    // Sort by sequence number
+    const sorted = [...actions].sort(
+      (a, b) => parseInt(a.sequenceNumber) - parseInt(b.sequenceNumber)
+    )
+
+    const groups: DraftGroup[] = []
+    let currentGroup: DraftGroup | null = null
+
+    for (const action of sorted) {
+      // Check if we should start a new group
+      if (
+        !currentGroup ||
+        currentGroup.teamId !== action.drafter.id ||
+        currentGroup.type !== action.type
+      ) {
+        // Save current group if exists
+        if (currentGroup) {
+          groups.push(currentGroup)
+        }
+        // Start new group
+        currentGroup = {
+          teamId: action.drafter.id,
+          type: action.type,
+          actions: [action],
+          startSeq: parseInt(action.sequenceNumber),
+          endSeq: parseInt(action.sequenceNumber),
+        }
+      } else {
+        // Add to current group
+        currentGroup.actions.push(action)
+        currentGroup.endSeq = parseInt(action.sequenceNumber)
+      }
+    }
+
+    // Don't forget the last group
+    if (currentGroup) {
+      groups.push(currentGroup)
+    }
+
+    return groups
+  }
+
+  const renderDraftTimeline = (game: Game) => {
     if (!game.draftActions || game.draftActions.length === 0) {
       return <p style={{ color: 'var(--text-tertiary)' }}>No draft data available</p>
     }
 
-    // Group draft actions by team
+    const groups = groupDraftActions(game.draftActions)
+    
+    // Get team IDs for headers
     const teamIds = Array.from(new Set(game.draftActions.map(a => a.drafter.id)))
     const team1Id = teamIds[0]
     const team2Id = teamIds[1]
 
-    const team1Actions = game.draftActions.filter(a => a.drafter.id === team1Id)
-    const team2Actions = game.draftActions.filter(a => a.drafter.id === team2Id)
-
-    const team1Bans = team1Actions.filter(a => a.type === 'ban')
-    const team1Picks = team1Actions.filter(a => a.type === 'pick')
-    const team2Bans = team2Actions.filter(a => a.type === 'ban')
-    const team2Picks = team2Actions.filter(a => a.type === 'pick')
+    // Track last type and team for separators
+    let lastType: 'ban' | 'pick' | null = null
+    let lastTeamId: string | null = null
 
     return (
-      <div className={styles.draftSummary}>
-        {/* Team 1 (Blue Side) */}
-        <div className={styles.draftTeamColumn}>
-          <div className={styles.draftTeamHeader}>
+      <div className={styles.draftTimeline}>
+        {/* Team Headers */}
+        <div className={styles.draftTeamHeaders}>
+          <div className={styles.draftTeamLabel}>
             <span className={`${styles.draftTeamName} ${styles.blue}`}>
               {getTeamName(team1Id)}
             </span>
             <span className={styles.draftTeamSide}>Blue Side</span>
           </div>
-          
-          {/* Bans */}
-          <div className={styles.draftCategory}>
-            <span className={styles.draftCategoryTitle}>Bans</span>
-            <div className={styles.bansRow}>
-              {team1Bans.map(action => (
-                <div key={action.id} className={styles.banCard} title={action.draftable.name}>
-                  <Image
-                    src={getChampionImagePath(action.draftable.name)}
-                    alt={action.draftable.name}
-                    width={36}
-                    height={36}
-                    className={styles.banImage}
-                    unoptimized
-                  />
-                  <span className={styles.banTooltip}>{action.draftable.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          {/* Picks */}
-          <div className={styles.draftCategory}>
-            <span className={styles.draftCategoryTitle}>Picks</span>
-            <div className={styles.picksGrid}>
-              {team1Picks.map(action => (
-                <div key={action.id} className={styles.pickCard}>
-                  <div className={styles.pickImageWrapper}>
-                    <Image
-                      src={getChampionImagePath(action.draftable.name)}
-                      alt={action.draftable.name}
-                      width={48}
-                      height={48}
-                      className={styles.pickImage}
-                      unoptimized
-                    />
-                  </div>
-                  <span className={styles.pickName}>{action.draftable.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Team 2 (Red Side) */}
-        <div className={`${styles.draftTeamColumn} ${styles.right}`}>
-          <div className={styles.draftTeamHeader}>
+          <div className={`${styles.draftTeamLabel} ${styles.right}`}>
             <span className={`${styles.draftTeamName} ${styles.red}`}>
               {getTeamName(team2Id)}
             </span>
             <span className={styles.draftTeamSide}>Red Side</span>
           </div>
-          
-          {/* Bans */}
-          <div className={styles.draftCategory}>
-            <span className={styles.draftCategoryTitle}>Bans</span>
-            <div className={styles.bansRow}>
-              {team2Bans.map(action => (
-                <div key={action.id} className={styles.banCard} title={action.draftable.name}>
-                  <Image
-                    src={getChampionImagePath(action.draftable.name)}
-                    alt={action.draftable.name}
-                    width={36}
-                    height={36}
-                    className={styles.banImage}
-                    unoptimized
-                  />
-                  <span className={styles.banTooltip}>{action.draftable.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          {/* Picks */}
-          <div className={styles.draftCategory}>
-            <span className={styles.draftCategoryTitle}>Picks</span>
-            <div className={styles.picksGrid}>
-              {team2Picks.map(action => (
-                <div key={action.id} className={styles.pickCard}>
-                  <div className={styles.pickImageWrapper}>
+        </div>
+
+        {/* Horizontal Draft Row */}
+        <div className={styles.draftHorizontalRow}>
+          {groups.map((group, groupIndex) => {
+            const side = getTeamSide(group.teamId)
+            const showPhaseDivider = lastType !== null && lastType !== group.type
+            const showGroupSeparator = !showPhaseDivider && lastTeamId !== null && lastTeamId !== group.teamId
+            
+            lastType = group.type
+            lastTeamId = group.teamId
+
+            return (
+              <div key={groupIndex} style={{ display: 'contents' }}>
+                {/* Phase divider (ban to pick) */}
+                {showPhaseDivider && (
+                  <div className={styles.phaseDivider}>
+                    <div className={styles.phaseDividerLine} />
+                  </div>
+                )}
+                
+                {/* Group separator (team change within same phase) */}
+                {showGroupSeparator && (
+                  <div className={styles.groupSeparator} />
+                )}
+                
+                {/* Champions in this group */}
+                {group.actions.map(action => (
+                  <div 
+                    key={action.id} 
+                    className={`${styles.draftChampionHorizontal} ${styles[side]} ${styles[action.type]}`}
+                  >
                     <Image
                       src={getChampionImagePath(action.draftable.name)}
                       alt={action.draftable.name}
-                      width={48}
-                      height={48}
-                      className={styles.pickImage}
+                      width={36}
+                      height={36}
                       unoptimized
                     />
+                    <span className={styles.championTooltip}>{action.draftable.name}</span>
+                    <span className={styles.seqBadge}>{action.sequenceNumber}</span>
                   </div>
-                  <span className={styles.pickName}>{action.draftable.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+                ))}
+              </div>
+            )
+          })}
         </div>
       </div>
     )
@@ -368,7 +382,7 @@ export default function SeriesPage() {
                         )}
                       </div>
                       <div className={styles.gameContent}>
-                        {renderDraftSummary(game)}
+                        {renderDraftTimeline(game)}
                       </div>
                     </div>
                   )

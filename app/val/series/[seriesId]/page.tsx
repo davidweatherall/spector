@@ -3,7 +3,6 @@
 import { useParams } from 'next/navigation'
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import layoutStyles from '../../../components/GamePageLayout.module.css'
 import styles from '../../../lol/series/[seriesId]/SeriesPage.module.css'
 import { formatDuration } from '../../../types/seriesEndState'
@@ -142,92 +141,138 @@ export default function SeriesPage() {
     return teamMap.get(teamId)?.name || teamId
   }
 
-  // For Valorant, we don't have champion images - just show agent names
-  const renderDraftSummary = (game: Game) => {
+  const getTeamSide = (teamId: string): 'blue' | 'red' => {
+    return teamMap.get(teamId)?.side || 'blue'
+  }
+
+  // Group consecutive draft actions by the same team
+  interface DraftGroup {
+    teamId: string
+    type: 'ban' | 'pick'
+    actions: DraftAction[]
+    startSeq: number
+    endSeq: number
+  }
+
+  const groupDraftActions = (actions: DraftAction[]): DraftGroup[] => {
+    if (!actions || actions.length === 0) return []
+
+    const sorted = [...actions].sort(
+      (a, b) => parseInt(a.sequenceNumber) - parseInt(b.sequenceNumber)
+    )
+
+    const groups: DraftGroup[] = []
+    let currentGroup: DraftGroup | null = null
+
+    for (const action of sorted) {
+      if (
+        !currentGroup ||
+        currentGroup.teamId !== action.drafter.id ||
+        currentGroup.type !== action.type
+      ) {
+        if (currentGroup) {
+          groups.push(currentGroup)
+        }
+        currentGroup = {
+          teamId: action.drafter.id,
+          type: action.type,
+          actions: [action],
+          startSeq: parseInt(action.sequenceNumber),
+          endSeq: parseInt(action.sequenceNumber),
+        }
+      } else {
+        currentGroup.actions.push(action)
+        currentGroup.endSeq = parseInt(action.sequenceNumber)
+      }
+    }
+
+    if (currentGroup) {
+      groups.push(currentGroup)
+    }
+
+    return groups
+  }
+
+  const renderDraftTimeline = (game: Game) => {
     if (!game.draftActions || game.draftActions.length === 0) {
       return <p style={{ color: 'var(--text-tertiary)' }}>No draft data available</p>
     }
 
+    const groups = groupDraftActions(game.draftActions)
+    
     const teamIds = Array.from(new Set(game.draftActions.map(a => a.drafter.id)))
     const team1Id = teamIds[0]
     const team2Id = teamIds[1]
 
-    const team1Actions = game.draftActions.filter(a => a.drafter.id === team1Id)
-    const team2Actions = game.draftActions.filter(a => a.drafter.id === team2Id)
-
-    const team1Bans = team1Actions.filter(a => a.type === 'ban')
-    const team1Picks = team1Actions.filter(a => a.type === 'pick')
-    const team2Bans = team2Actions.filter(a => a.type === 'ban')
-    const team2Picks = team2Actions.filter(a => a.type === 'pick')
+    let lastType: 'ban' | 'pick' | null = null
+    let lastTeamId: string | null = null
 
     return (
-      <div className={styles.draftSummary}>
-        {/* Team 1 */}
-        <div className={styles.draftTeamColumn}>
-          <div className={styles.draftTeamHeader}>
+      <div className={styles.draftTimeline}>
+        {/* Team Headers */}
+        <div className={styles.draftTeamHeaders}>
+          <div className={styles.draftTeamLabel}>
             <span className={`${styles.draftTeamName} ${styles.blue}`}>
               {getTeamName(team1Id)}
             </span>
             <span className={styles.draftTeamSide}>Attackers</span>
           </div>
-          
-          {team1Bans.length > 0 && (
-            <div className={styles.draftCategory}>
-              <span className={styles.draftCategoryTitle}>Bans</span>
-              <div className={styles.draftCategoryItems}>
-                {team1Bans.map(action => (
-                  <div key={action.id} className={`${styles.championCard} ${styles.ban}`}>
-                    <span className={styles.championName}>{action.draftable.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          <div className={styles.draftCategory}>
-            <span className={styles.draftCategoryTitle}>Picks</span>
-            <div className={styles.draftCategoryItems}>
-              {team1Picks.map(action => (
-                <div key={action.id} className={`${styles.championCard} ${styles.pick}`}>
-                  <span className={styles.championName}>{action.draftable.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Team 2 */}
-        <div className={`${styles.draftTeamColumn} ${styles.right}`}>
-          <div className={styles.draftTeamHeader}>
+          <div className={`${styles.draftTeamLabel} ${styles.right}`}>
             <span className={`${styles.draftTeamName} ${styles.red}`}>
               {getTeamName(team2Id)}
             </span>
             <span className={styles.draftTeamSide}>Defenders</span>
           </div>
-          
-          {team2Bans.length > 0 && (
-            <div className={styles.draftCategory}>
-              <span className={styles.draftCategoryTitle}>Bans</span>
-              <div className={styles.draftCategoryItems}>
-                {team2Bans.map(action => (
-                  <div key={action.id} className={`${styles.championCard} ${styles.ban}`}>
-                    <span className={styles.championName}>{action.draftable.name}</span>
+        </div>
+
+        {/* Horizontal Draft Row */}
+        <div className={styles.draftHorizontalRow}>
+          {groups.map((group, groupIndex) => {
+            const side = getTeamSide(group.teamId)
+            const showPhaseDivider = lastType !== null && lastType !== group.type
+            const showGroupSeparator = !showPhaseDivider && lastTeamId !== null && lastTeamId !== group.teamId
+            
+            lastType = group.type
+            lastTeamId = group.teamId
+
+            return (
+              <div key={groupIndex} style={{ display: 'contents' }}>
+                {/* Phase divider (ban to pick) */}
+                {showPhaseDivider && (
+                  <div className={styles.phaseDivider}>
+                    <div className={styles.phaseDividerLine} />
+                  </div>
+                )}
+                
+                {/* Group separator (team change within same phase) */}
+                {showGroupSeparator && (
+                  <div className={styles.groupSeparator} />
+                )}
+                
+                {/* Agents in this group - no images for Valorant */}
+                {group.actions.map(action => (
+                  <div 
+                    key={action.id} 
+                    className={`${styles.draftChampionHorizontal} ${styles[side]} ${styles[action.type]}`}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      width: 'auto',
+                      minWidth: '36px',
+                      padding: '0.25rem 0.5rem',
+                      background: 'rgba(255, 255, 255, 0.05)'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>
+                      {action.draftable.name}
+                    </span>
+                    <span className={styles.seqBadge}>{action.sequenceNumber}</span>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-          
-          <div className={styles.draftCategory}>
-            <span className={styles.draftCategoryTitle}>Picks</span>
-            <div className={styles.draftCategoryItems}>
-              {team2Picks.map(action => (
-                <div key={action.id} className={`${styles.championCard} ${styles.pick}`}>
-                  <span className={styles.championName}>{action.draftable.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+            )
+          })}
         </div>
       </div>
     )
@@ -325,7 +370,7 @@ export default function SeriesPage() {
                         )}
                       </div>
                       <div className={styles.gameContent}>
-                        {renderDraftSummary(game)}
+                        {renderDraftTimeline(game)}
                       </div>
                     </div>
                   )

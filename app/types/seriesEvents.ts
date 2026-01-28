@@ -28,7 +28,7 @@ export interface BaseGameEvent {
   type: string
   actor: EventActor
   target: EventTarget
-  seriesState?: SeriesState
+  seriesState?: EventSeriesState
 }
 
 // ============================================================================
@@ -38,31 +38,31 @@ export interface BaseGameEvent {
 export interface EventActor {
   type: string
   id: string
-  stateDelta: unknown
-  state: unknown
+  stateDelta?: unknown
+  state?: unknown
 }
 
 export interface EventTarget {
   type: string
   id: string
-  stateDelta: unknown
-  state: unknown
+  stateDelta?: unknown
+  state?: unknown
 }
 
 // ============================================================================
-// SERIES STATE
+// SERIES STATE (for events)
 // ============================================================================
 
-export interface SeriesState {
+export interface EventSeriesState {
   id: string
-  games: GameState[]
+  games: EventGameState[]
 }
 
 // ============================================================================
-// GAME STATE
+// GAME STATE (for events)
 // ============================================================================
 
-export interface GameState {
+export interface EventGameState {
   clock: Clock
   teams: TeamState[]
 }
@@ -134,12 +134,12 @@ export interface PlayerPurchasedItemStateDelta {
     loadoutValue: number
     netWorth: number
     inventory: {
-      items: Item[]
+      items: EventItem[]
     }
   }
 }
 
-export interface Item {
+export interface EventItem {
   id: string
   statePath: StatePath[]
   name: string
@@ -174,7 +174,7 @@ export interface PlayerAcquiredItemStateDelta {
     loadoutValue: number
     netWorth: number
     inventory: {
-      items: Item[]
+      items: EventItem[]
     }
   }
 }

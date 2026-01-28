@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { GridDataProvider } from './contexts/GridDataContext'
 
 export const metadata: Metadata = {
   title: 'Spector',
@@ -13,7 +14,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <GridDataProvider>
+          {children}
+        </GridDataProvider>
+      </body>
     </html>
   )
 }

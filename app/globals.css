@@ -3,36 +3,37 @@
  * Modern esports/gaming theme
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@400;500;600;700&display=swap');
 
 :root {
   /* Background colours */
-  --bg-primary: #0d0d0d;
-  --bg-secondary: #141414;
-  --bg-tertiary: #1a1a1a;
-  --bg-elevated: #222222;
-  --bg-card: rgba(255, 255, 255, 0.03);
-  --bg-card-hover: rgba(255, 255, 255, 0.06);
+  --bg-primary: #0a0a0c;
+  --bg-secondary: #101014;
+  --bg-tertiary: #1a1a1f;
+  --bg-card: rgba(30, 35, 45, 0.8);
+  --bg-card-hover: rgba(40, 45, 55, 0.9);
 
   /* Text colours */
   --text-primary: #ffffff;
-  --text-secondary: #888888;
-  --text-tertiary: #555555;
+  --text-secondary: #8a8a9a;
+  --text-tertiary: #555560;
 
   /* Accent colours */
-  --accent-primary: #00ffff;
-  --accent-lol: #c8a855;
-  --accent-lol-dim: rgba(200, 168, 85, 0.15);
+  --accent-primary: #00d4ff;
+  --accent-lol: #c9a634;
+  --accent-lol-glow: rgba(201, 166, 52, 0.4);
+  --accent-lol-blue: #1a5a8a;
   --accent-valorant: #ff4655;
-  --accent-valorant-dim: rgba(255, 70, 85, 0.15);
+  --accent-valorant-glow: rgba(255, 70, 85, 0.4);
 
   /* Border colours */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-medium: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.12);
 
   /* Typography */
-  --font-heading: 'Orbitron', 'Inter', system-ui, sans-serif;
+  --font-heading: 'Orbitron', 'Rajdhani', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
+  --font-game: 'Rajdhani', 'Inter', system-ui, sans-serif;
 
   /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -66,7 +67,6 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
   font-weight: 600;
   line-height: 1.1;
-  letter-spacing: 0.02em;
 }
 
 a {

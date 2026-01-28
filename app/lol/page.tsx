@@ -1,5 +1,8 @@
+'use client'
+
 import Link from 'next/link'
 import styles from '../components/GamePageLayout.module.css'
+import TournamentSelector from '../components/TournamentSelector'
 
 export default function LeagueOfLegendsPage() {
   return (
@@ -22,7 +25,10 @@ export default function LeagueOfLegendsPage() {
         <h1 className={`${styles.pageTitle} ${styles.pageTitleLol}`}>
           LEAGUE OF LEGENDS
         </h1>
-        <p className={styles.pageContent}>Hello World</p>
+        
+        <div className={styles.contentSection}>
+          <TournamentSelector game="lol" />
+        </div>
       </main>
     </div>
   )

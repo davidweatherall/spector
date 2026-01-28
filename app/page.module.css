@@ -1,176 +1,215 @@
-/* Landing Page - Modern Gamer Aesthetic */
+/* Landing Page - Split Screen Design */
 .container {
   min-height: 100vh;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  background: var(--bg-primary);
   position: relative;
   overflow: hidden;
 }
 
-/* Subtle background gradient */
-.container::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: 
-    radial-gradient(ellipse at 30% 20%, rgba(200, 168, 85, 0.03) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(255, 70, 85, 0.03) 0%, transparent 50%);
-  pointer-events: none;
-}
-
-/* Game Selection Cards */
-.tabsContainer {
+/* Split Panels */
+.panel {
+  flex: 1;
   display: flex;
-  gap: 2rem;
-  margin-bottom: 4rem;
-  position: relative;
-  z-index: 1;
-}
-
-.gameTab {
-  position: relative;
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 320px;
-  height: 180px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  position: relative;
   cursor: pointer;
-  transition: all var(--transition-base);
-  text-decoration: none;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  backdrop-filter: blur(10px);
 }
 
-/* Hover glow effect */
-.gameTab::before {
+/* Panel background overlay */
+.panel::before {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 12px;
   opacity: 0;
-  transition: opacity var(--transition-base);
+  transition: opacity 0.4s ease;
   pointer-events: none;
 }
 
-/* Top accent line */
-.gameTab::after {
+/* Panel divider line */
+.panel::after {
   content: '';
   position: absolute;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 2px;
-  transition: width var(--transition-base);
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  pointer-events: none;
 }
 
-.gameTab:hover {
-  transform: translateY(-4px);
-  background: var(--bg-card-hover);
-  border-color: var(--border-medium);
+.panelLol::after {
+  right: 0;
 }
 
-.gameTab:hover::before {
+.panelVal::after {
+  left: 0;
+}
+
+.panel:hover {
+  flex: 1.15;
+}
+
+.panel:hover::before {
   opacity: 1;
 }
 
-.gameTab:hover::after {
-  width: 60%;
+/* League of Legends Panel */
+.panelLol {
+  background: linear-gradient(135deg, #0d1520 0%, #0a1018 50%, #081015 100%);
 }
 
-/* League of Legends Card */
-.lolTab::before {
-  background: radial-gradient(ellipse at center, var(--accent-lol-dim) 0%, transparent 70%);
+.panelLol::before {
+  background: 
+    radial-gradient(ellipse at 50% 50%, rgba(201, 166, 52, 0.08) 0%, transparent 60%),
+    linear-gradient(135deg, rgba(26, 90, 138, 0.1) 0%, transparent 50%);
 }
 
-.lolTab::after {
-  background: linear-gradient(90deg, transparent, var(--accent-lol), transparent);
+/* Valorant Panel */
+.panelVal {
+  background: linear-gradient(135deg, #150d10 0%, #120a0c 50%, #0f0809 100%);
 }
 
-.lolTab:hover {
-  border-color: rgba(200, 168, 85, 0.3);
-  box-shadow: 0 20px 40px -20px rgba(200, 168, 85, 0.2);
+.panelVal::before {
+  background: 
+    radial-gradient(ellipse at 50% 50%, rgba(255, 70, 85, 0.08) 0%, transparent 60%);
 }
 
-.lolTab .tabTitle {
-  color: var(--accent-lol);
+/* Panel Content */
+.panelContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  padding-bottom: 15vh;
 }
 
-/* Valorant Card */
-.valTab::before {
-  background: radial-gradient(ellipse at center, var(--accent-valorant-dim) 0%, transparent 70%);
+/* Game Icons */
+.iconContainer {
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+  transition: all 0.4s ease;
 }
 
-.valTab::after {
-  background: linear-gradient(90deg, transparent, var(--accent-valorant), transparent);
+.panel:hover .iconContainer {
+  transform: scale(1.1);
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.valTab:hover {
+.panelLol:hover .iconContainer {
+  border-color: rgba(201, 166, 52, 0.3);
+  box-shadow: 0 0 40px rgba(201, 166, 52, 0.15);
+}
+
+.panelVal:hover .iconContainer {
   border-color: rgba(255, 70, 85, 0.3);
-  box-shadow: 0 20px 40px -20px rgba(255, 70, 85, 0.2);
+  box-shadow: 0 0 40px rgba(255, 70, 85, 0.15);
 }
 
-.valTab .tabTitle {
-  color: var(--accent-valorant);
+.gameIcon {
+  width: 50px;
+  height: 50px;
+  transition: all 0.4s ease;
 }
 
-/* Card Content */
-.tabTitle {
+.lolIcon {
+  color: #c9a634;
+}
+
+.valIcon {
+  color: #ff4655;
+}
+
+.panel:hover .gameIcon {
+  transform: scale(1.05);
+}
+
+/* Game Title */
+.gameTitle {
   font-family: var(--font-heading);
-  font-size: 1.125rem;
+  font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  margin-bottom: 0.5rem;
-  transition: color var(--transition-fast);
+  color: rgba(255, 255, 255, 0.85);
+  transition: all 0.4s ease;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
 }
 
-.tabSubtitle {
-  font-size: 0.8125rem;
-  font-weight: 400;
-  color: var(--text-secondary);
-  letter-spacing: 0.05em;
+.panelLol .gameTitle {
+  color: #c9a634;
 }
 
-/* Hero Section */
+.panelVal .gameTitle {
+  color: #ff4655;
+}
+
+.panelLol:hover .gameTitle {
+  color: #dab84a;
+  text-shadow: 0 0 30px rgba(201, 166, 52, 0.4);
+}
+
+.panelVal:hover .gameTitle {
+  color: #ff5a68;
+  text-shadow: 0 0 30px rgba(255, 70, 85, 0.4);
+}
+
+/* Hero Title - Centered at bottom */
 .hero {
-  text-align: center;
-  position: relative;
-  z-index: 1;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 25%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  pointer-events: none;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
 }
 
 .heroTitle {
-  font-size: 3.5rem;
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  color: var(--text-primary);
-  margin-bottom: 1rem;
+  font-family: var(--font-heading);
+  font-size: 4rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  color: #ffffff;
+  text-shadow: 
+    0 0 60px rgba(0, 0, 0, 0.8),
+    0 0 120px rgba(0, 0, 0, 0.5);
+  margin-right: -0.4em; /* Compensate for letter-spacing on last char */
 }
 
-.heroSubtitle {
-  font-size: 0.9375rem;
-  font-weight: 400;
-  color: var(--text-secondary);
-  max-width: 400px;
-  line-height: 1.7;
-  letter-spacing: 0.02em;
-}
-
-/* Minimal accent */
-.accentLine {
-  width: 40px;
-  height: 1px;
-  background: var(--text-tertiary);
-  margin: 2rem auto 0;
+/* Subtle circuit pattern overlay */
+.circuitOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 80px,
+      rgba(255, 255, 255, 0.02) 80px,
+      rgba(255, 255, 255, 0.02) 81px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 80px,
+      rgba(255, 255, 255, 0.02) 80px,
+      rgba(255, 255, 255, 0.02) 81px
+    );
 }

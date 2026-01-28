@@ -97,6 +97,12 @@
   font-size: 1rem;
 }
 
+.contentSection {
+  margin-top: 2rem;
+  width: 100%;
+  max-width: 500px;
+}
+
 /* Accent Bar */
 .accentBar {
   height: 1px;

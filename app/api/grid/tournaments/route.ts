@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const GRID_API_URL = 'https://api-op.grid.gg/central-data/graphql'
 
+// Permanent in-memory cache for tournaments (historical data doesn't change)
+const tournamentsCache = new Map<string, unknown>()
+
 interface Tournament {
   id: string
   name: string
@@ -132,28 +135,44 @@ export async function GET(request: NextRequest) {
     // titleId: 3 = League of Legends, 25 = Valorant
     const titleId = game === 'valorant' ? '25' : '3'
 
+    // Check cache first (permanent cache)
+    const cached = tournamentsCache.get(titleId)
+    if (cached) {
+      console.log('Returning cached tournaments')
+      return NextResponse.json(cached)
+    }
+
     // Fetch all tournaments with pagination
     const allTournaments = await fetchAllTournaments(apiKey, titleId)
 
-    // Filter: keep tournaments that have startDate
-    const validTournaments = allTournaments.filter((t) => t.startDate)
+    // Filter: keep only tournaments with the stage suffix pattern
+    // Tournaments with "(Stage: Stage)" pattern have actual series data
+    // e.g., "LCK - Spring 2024 (Regular Season: Regular Season)" has data
+    // but "LCK - Spring 2024" (parent tournament) doesn't
+    const stagePattern = /\([^)]+:\s*[^)]+\)$/
+    const validTournaments = allTournaments.filter(
+      (t) => stagePattern.test(t.name)
+    )
 
     const now = new Date()
 
     // Process tournaments and extract leagues
-    // Determine if tournament is "live" based on dates
+    // Determine if tournament is "live" based on name (contains current year and "Spring"/"Split 1" for Q1-Q2)
+    const currentYear = now.getFullYear().toString()
+    
     const tournaments: TournamentWithLeague[] = validTournaments.map(
       (tournament) => {
-        const startDate = tournament.startDate ? new Date(tournament.startDate) : null
-        const endDate = tournament.endDate ? new Date(tournament.endDate) : null
+        // Check if tournament name contains current year
+        const isCurrentYear = tournament.name.includes(currentYear)
         
-        // Tournament is live if: started (startDate <= now) AND not ended (no endDate OR endDate > now)
-        const isLive = startDate && startDate <= now && (!endDate || endDate > now)
+        // Simple heuristic: if it's current year, it might be live
+        // We can't reliably determine live status without dates
+        const isLive = isCurrentYear
         
         return {
           ...tournament,
           league: extractLeague(tournament.name),
-          isLive: Boolean(isLive),
+          isLive,
         }
       }
     )
@@ -170,21 +189,25 @@ export async function GET(request: NextRequest) {
       tournamentsByLeague[tournament.league].push(tournament)
     }
 
-    // Sort tournaments within each league by startDate (most recent first)
+    // Sort tournaments within each league by name (to group by year/season)
     for (const league of Object.keys(tournamentsByLeague)) {
       tournamentsByLeague[league].sort((a, b) => {
-        if (!a.startDate) return 1
-        if (!b.startDate) return -1
-        return new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+        // Sort by name descending so newer tournaments appear first
+        return b.name.localeCompare(a.name)
       })
     }
 
-    return NextResponse.json({
+    const responseData = {
       tournaments,
       leagues,
       tournamentsByLeague,
       totalCount: tournaments.length,
-    })
+    }
+    
+    // Cache the response permanently
+    tournamentsCache.set(titleId, responseData)
+    
+    return NextResponse.json(responseData)
   } catch (error) {
     console.error('GRID API error:', error)
     return NextResponse.json(

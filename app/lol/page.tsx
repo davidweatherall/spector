@@ -11,6 +11,9 @@ export default function LeagueOfLegendsPage() {
         <Link href="/" className={styles.logo}>
           SPECTOR
         </Link>
+        <h1 className={`${styles.pageTitle} ${styles.pageTitleLol}`}>
+          LEAGUE OF LEGENDS
+        </h1>
         <Link 
           href="/val" 
           className={`${styles.switchButton} ${styles.switchButtonVal}`}
@@ -22,10 +25,6 @@ export default function LeagueOfLegendsPage() {
       <div className={`${styles.accentBar} ${styles.accentBarLol}`} />
 
       <main className={styles.main}>
-        <h1 className={`${styles.pageTitle} ${styles.pageTitleLol}`}>
-          LEAGUE OF LEGENDS
-        </h1>
-        
         <div className={styles.contentSection}>
           <TournamentSelector game="lol" />
         </div>

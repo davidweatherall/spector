@@ -11,7 +11,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.25rem 2rem;
+  gap: 1.5rem;
+  padding: 1rem 2rem;
   background: transparent;
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -72,16 +73,14 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
+  padding: 1.5rem 2rem;
+  gap: 1.5rem;
 }
 
 .pageTitle {
-  font-size: 2rem;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.1em;
-  margin-bottom: 0.75rem;
 }
 
 .pageTitleLol {
@@ -98,9 +97,7 @@
 }
 
 .contentSection {
-  margin-top: 2rem;
   width: 100%;
-  max-width: 500px;
 }
 
 /* Accent Bar */

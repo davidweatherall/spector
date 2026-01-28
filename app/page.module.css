@@ -1,0 +1,176 @@
+/* Landing Page - Modern Gamer Aesthetic */
+.container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: var(--bg-primary);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle background gradient */
+.container::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: 
+    radial-gradient(ellipse at 30% 20%, rgba(200, 168, 85, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(255, 70, 85, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+/* Game Selection Cards */
+.tabsContainer {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 4rem;
+  position: relative;
+  z-index: 1;
+}
+
+.gameTab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 320px;
+  height: 180px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  text-decoration: none;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+/* Hover glow effect */
+.gameTab::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  opacity: 0;
+  transition: opacity var(--transition-base);
+  pointer-events: none;
+}
+
+/* Top accent line */
+.gameTab::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 2px;
+  transition: width var(--transition-base);
+}
+
+.gameTab:hover {
+  transform: translateY(-4px);
+  background: var(--bg-card-hover);
+  border-color: var(--border-medium);
+}
+
+.gameTab:hover::before {
+  opacity: 1;
+}
+
+.gameTab:hover::after {
+  width: 60%;
+}
+
+/* League of Legends Card */
+.lolTab::before {
+  background: radial-gradient(ellipse at center, var(--accent-lol-dim) 0%, transparent 70%);
+}
+
+.lolTab::after {
+  background: linear-gradient(90deg, transparent, var(--accent-lol), transparent);
+}
+
+.lolTab:hover {
+  border-color: rgba(200, 168, 85, 0.3);
+  box-shadow: 0 20px 40px -20px rgba(200, 168, 85, 0.2);
+}
+
+.lolTab .tabTitle {
+  color: var(--accent-lol);
+}
+
+/* Valorant Card */
+.valTab::before {
+  background: radial-gradient(ellipse at center, var(--accent-valorant-dim) 0%, transparent 70%);
+}
+
+.valTab::after {
+  background: linear-gradient(90deg, transparent, var(--accent-valorant), transparent);
+}
+
+.valTab:hover {
+  border-color: rgba(255, 70, 85, 0.3);
+  box-shadow: 0 20px 40px -20px rgba(255, 70, 85, 0.2);
+}
+
+.valTab .tabTitle {
+  color: var(--accent-valorant);
+}
+
+/* Card Content */
+.tabTitle {
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  transition: color var(--transition-fast);
+}
+
+.tabSubtitle {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+}
+
+/* Hero Section */
+.hero {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.heroTitle {
+  font-size: 3.5rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+}
+
+.heroSubtitle {
+  font-size: 0.9375rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  max-width: 400px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+}
+
+/* Minimal accent */
+.accentLine {
+  width: 40px;
+  height: 1px;
+  background: var(--text-tertiary);
+  margin: 2rem auto 0;
+}

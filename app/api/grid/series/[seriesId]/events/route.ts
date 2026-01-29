@@ -3,6 +3,10 @@ import { writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 
+// Disable all Next.js caching for this route (files are too large)
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
 // Track which series events have been downloaded
 const downloadedSeries = new Set<string>()
 
@@ -36,7 +40,7 @@ export async function GET(
       })
     }
 
-    // Fetch events zip from GRID API
+    // Fetch events zip from GRID API (no-store to skip cache for large files)
     const response = await fetch(
       `https://api.grid.gg/file-download/events/grid/series/${seriesId}`,
       {
@@ -45,6 +49,7 @@ export async function GET(
           'Accept': 'application/zip',
           'x-api-key': apiKey,
         },
+        cache: 'no-store',
       }
     )
 

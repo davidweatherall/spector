@@ -217,8 +217,11 @@ export interface PlayerCompletedIncreaseLevelGameEvent extends BaseGameEvent {
   actor: {
     type: 'player'
     id: string
-    stateDelta: PlayerCompletedIncreaseLevelStateDelta
-    state: unknown
+    target: {
+      state: {
+        completionCount: number; // their new level is completionCount + 1.
+      }
+    }
   }
 }
 

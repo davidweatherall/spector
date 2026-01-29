@@ -629,10 +629,40 @@
 /* Loading & Error States */
 .loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 4rem;
+  gap: 1.5rem;
+  padding: 6rem 2rem;
+  color: var(--text-secondary);
+  font-size: 1.125rem;
+}
+
+.loadingSpinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--border-subtle);
+  border-top-color: var(--accent-lol);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.gameInfo {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.gameLength {
+  font-size: 0.875rem;
   color: var(--text-tertiary);
+  font-weight: 500;
 }
 
 .error {
@@ -641,6 +671,71 @@
   border: 1px solid rgba(255, 70, 85, 0.2);
   border-radius: 8px;
   color: #ff4655;
+}
+
+/* Events Section */
+.eventsSection {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Player Section (Interactive Map) */
+.playerSection {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.eventsSectionTitle {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 1rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.eventsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.eventRow {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.eventRow:last-child {
+  border-bottom: none;
+}
+
+.eventTime {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
+.eventType {
+  color: #60a5fa;
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 140px;
+}
+
+.eventData {
+  color: var(--text-secondary);
+  word-break: break-all;
 }
 
 .eventsStatus {

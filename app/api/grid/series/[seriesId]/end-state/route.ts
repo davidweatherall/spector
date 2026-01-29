@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+// Disable Next.js caching
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
 // Permanent cache for end-state data
 const endStateCache = new Map<string, unknown>()
 
@@ -34,6 +38,7 @@ export async function GET(
           'Accept': 'application/json',
           'x-api-key': apiKey,
         },
+        cache: 'no-store',
       }
     )
 

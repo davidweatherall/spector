@@ -11,6 +11,7 @@ const API_KEY = process.env.GRID_ESPORTS_API_KEY
 const BASE_URL = 'https://api.grid.gg/file-download'
 const DATA_DIR = path.join(process.cwd(), 'data')
 const CONVERTED_DIR = path.join(DATA_DIR, 'converted')
+const POSITIONS_FILE = path.join(DATA_DIR, 'positions.json')
 
 // Ensure directories exist
 async function ensureDir(dir: string) {
@@ -18,6 +19,51 @@ async function ensureDir(dir: string) {
     await fs.access(dir)
   } catch {
     await fs.mkdir(dir, { recursive: true })
+  }
+}
+
+// Update positions.json with new players (only adds, never overwrites existing)
+async function updatePositionsFile(streamlined: StreamlinedSeries) {
+  let positions: Record<string, string> = {}
+  
+  // Read existing positions file if it exists
+  try {
+    const existing = await fs.readFile(POSITIONS_FILE, 'utf-8')
+    positions = JSON.parse(existing)
+  } catch {
+    // File doesn't exist yet, start with empty object
+  }
+  
+  // Add new players with "unknown" position
+  let hasNewPlayers = false
+  for (const team of streamlined.teams) {
+    for (const player of team.players) {
+      if (!(player.name in positions)) {
+        positions[player.name] = 'unknown'
+        hasNewPlayers = true
+      }
+    }
+  }
+  
+  // Also check players from games (in case they have different data)
+  for (const game of streamlined.games) {
+    for (const player of game.players) {
+      if (!(player.name in positions)) {
+        positions[player.name] = 'unknown'
+        hasNewPlayers = true
+      }
+    }
+  }
+  
+  // Only write if there are new players
+  if (hasNewPlayers) {
+    // Sort alphabetically for easier manual editing
+    const sorted = Object.keys(positions).sort().reduce((acc, key) => {
+      acc[key] = positions[key]
+      return acc
+    }, {} as Record<string, string>)
+    
+    await fs.writeFile(POSITIONS_FILE, JSON.stringify(sorted, null, 2))
   }
 }
 
@@ -112,6 +158,9 @@ export async function GET(
     
     // Convert the data
     const streamlined = convertSeriesData(endStateData, eventsContent)
+    
+    // Update positions.json with any new players
+    await updatePositionsFile(streamlined)
     
     // Save converted data
     await fs.writeFile(convertedPath, JSON.stringify(streamlined, null, 2))

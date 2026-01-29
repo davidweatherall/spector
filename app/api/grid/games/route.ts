@@ -106,7 +106,7 @@ async function fetchGamesForTournament(
     throw new Error(result.errors[0]?.message || 'GraphQL error')
   }
 
-  return result.data.allSeries.edges
+  const games = result.data.allSeries.edges
     .map(edge => {
       const series = edge.node
       const teams = series.teams.filter(t => t.baseInfo)
@@ -128,6 +128,9 @@ async function fetchGamesForTournament(
       }
     })
     .filter((game): game is Game => game !== null)
+  
+  console.log(`Fetched ${games.length} games for team ${teamId} in tournament ${tournamentId}`)
+  return games
 }
 
 export async function POST(request: NextRequest) {
@@ -160,9 +163,13 @@ export async function POST(request: NextRequest) {
     // Create cache key from teamId + sorted tournamentIds
     const cacheKey = `${teamId}:${tournamentIds.sort().join(',')}`
     
+    console.log(`\n=== Fetching games for team: ${teamName} (ID: ${teamId}) ===`)
+    console.log(`Tournaments: ${tournamentIds.length}`)
+    
     // Check cache (permanent - historical data doesn't change)
     const cached = gamesCache.get(cacheKey)
     if (cached) {
+      console.log(`Returning ${cached.length} cached games`)
       return NextResponse.json({
         games: cached,
         totalCount: cached.length,
@@ -206,7 +213,9 @@ export async function POST(request: NextRequest) {
     uniqueGames.sort((a, b) => {
       if (!a.date) return 1
       if (!b.date) return -1
-      return new Date(b.date).getTime() - new Date(a.date).getTime()
+      const dateA = new Date(a.date).getTime()
+      const dateB = new Date(b.date).getTime()
+      return dateB - dateA
     })
 
     // Limit to 20 most recent

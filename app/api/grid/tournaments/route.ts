@@ -135,11 +135,19 @@ export async function GET(request: NextRequest) {
     // titleId: 3 = League of Legends, 25 = Valorant
     const titleId = game === 'valorant' ? '25' : '3'
 
+    // Check for force refresh param
+    const forceRefresh = searchParams.get('refresh') === 'true'
+    
     // Check cache first (permanent cache)
-    const cached = tournamentsCache.get(titleId)
-    if (cached) {
-      console.log('Returning cached tournaments')
-      return NextResponse.json(cached)
+    if (!forceRefresh) {
+      const cached = tournamentsCache.get(titleId)
+      if (cached) {
+        console.log('Returning cached tournaments')
+        return NextResponse.json(cached)
+      }
+    } else {
+      // Clear cache if force refresh
+      tournamentsCache.delete(titleId)
     }
 
     // Fetch all tournaments with pagination
@@ -151,7 +159,7 @@ export async function GET(request: NextRequest) {
     // but "LCK - Spring 2024" (parent tournament) doesn't
     const stagePattern = /\([^)]+:\s*[^)]+\)$/
     const validTournaments = allTournaments.filter(
-      (t) => stagePattern.test(t.name)
+      (t) => stagePattern.test(t.name) && !t.name.includes('2024')
     )
 
     const now = new Date()

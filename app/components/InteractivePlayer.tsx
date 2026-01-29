@@ -45,21 +45,60 @@ export default function InteractivePlayer({
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const progressBarRef = useRef<HTMLDivElement>(null)
 
-  // Get the most recent coordinates for the current time
+  // Get interpolated coordinates for the current time
   const getCurrentCoordinates = useCallback((): PlayerCoordinate[] => {
     if (!coordinateTracking || coordinateTracking.length === 0) return []
     
-    // Find the most recent snapshot at or before current time
-    let bestSnapshot: CoordinateSnapshot | null = null
-    for (const snapshot of coordinateTracking) {
+    // Find the snapshots before and after current time
+    let beforeSnapshot: CoordinateSnapshot | null = null
+    let afterSnapshot: CoordinateSnapshot | null = null
+    
+    for (let i = 0; i < coordinateTracking.length; i++) {
+      const snapshot = coordinateTracking[i]
       if (snapshot.time <= currentTime) {
-        bestSnapshot = snapshot
+        beforeSnapshot = snapshot
       } else {
+        afterSnapshot = snapshot
         break
       }
     }
     
-    return bestSnapshot?.playerCoordinates || []
+    // If no before snapshot, return empty
+    if (!beforeSnapshot) return []
+    
+    // If no after snapshot or times are equal, return the before snapshot as-is
+    if (!afterSnapshot || beforeSnapshot.time === afterSnapshot.time) {
+      return beforeSnapshot.playerCoordinates
+    }
+    
+    // Calculate interpolation factor (0 to 1)
+    const timeDiff = afterSnapshot.time - beforeSnapshot.time
+    const timeProgress = currentTime - beforeSnapshot.time
+    const t = Math.max(0, Math.min(1, timeProgress / timeDiff))
+    
+    // Interpolate each player's position
+    const interpolatedCoords: PlayerCoordinate[] = []
+    
+    for (const beforeCoord of beforeSnapshot.playerCoordinates) {
+      // Find matching player in after snapshot
+      const afterCoord = afterSnapshot.playerCoordinates.find(
+        c => c.playerId === beforeCoord.playerId
+      )
+      
+      if (afterCoord) {
+        // Linear interpolation: before + (after - before) * t
+        interpolatedCoords.push({
+          playerId: beforeCoord.playerId,
+          x: Math.round(beforeCoord.x + (afterCoord.x - beforeCoord.x) * t),
+          y: Math.round(beforeCoord.y + (afterCoord.y - beforeCoord.y) * t)
+        })
+      } else {
+        // Player not in after snapshot, use before position
+        interpolatedCoords.push(beforeCoord)
+      }
+    }
+    
+    return interpolatedCoords
   }, [coordinateTracking, currentTime])
 
   // Get player info by ID
@@ -74,19 +113,22 @@ export default function InteractivePlayer({
     return player.teamId === blueSideTeamId ? 'blue' : 'red'
   }, [getPlayerInfo, blueSideTeamId])
 
-  // Start/stop playback
+  // Start/stop playback - 100ms intervals for smooth interpolation
+  const TICK_INTERVAL_MS = 100
+  const TIME_INCREMENT = 0.1 // seconds per tick
+  
   useEffect(() => {
     if (isPlaying) {
       intervalRef.current = setInterval(() => {
         setCurrentTime(prev => {
-          const next = prev + 1
+          const next = prev + TIME_INCREMENT * playbackSpeed
           if (next >= gameLength) {
             setIsPlaying(false)
             return gameLength
           }
           return next
         })
-      }, 1000 / playbackSpeed)
+      }, TICK_INTERVAL_MS)
     } else {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)

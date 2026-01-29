@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { convertSeriesData, StreamlinedSeries } from '../../../../../utils/seriesConverter'
 import { readJSON, storeJSON } from '../../../../../storage'
+import { runAllAnalytics } from '../../../../../analytics'
 
 // Disable all Next.js caching for this route
 export const dynamic = 'force-dynamic'
@@ -11,50 +12,6 @@ const BASE_URL = 'https://api.grid.gg/file-download'
 
 // Storage keys
 const getConvertedKey = (seriesId: string) => `converted/series_${seriesId}.json`
-const POSITIONS_KEY = 'data/positions.json'
-
-// Update positions with new players (only adds, never overwrites existing)
-async function updatePositions(streamlined: StreamlinedSeries) {
-  let positions: Record<string, string> = {}
-  
-  // Read existing positions
-  const existing = await readJSON<Record<string, string>>(POSITIONS_KEY)
-  if (existing) {
-    positions = existing
-  }
-  
-  // Add new players with "unknown" position
-  let hasNewPlayers = false
-  for (const team of streamlined.teams) {
-    for (const player of team.players) {
-      if (!(player.name in positions)) {
-        positions[player.name] = 'unknown'
-        hasNewPlayers = true
-      }
-    }
-  }
-  
-  // Also check players from games (in case they have different data)
-  for (const game of streamlined.games) {
-    for (const player of game.players) {
-      if (!(player.name in positions)) {
-        positions[player.name] = 'unknown'
-        hasNewPlayers = true
-      }
-    }
-  }
-  
-  // Only write if there are new players
-  if (hasNewPlayers) {
-    // Sort alphabetically for easier reading
-    const sorted = Object.keys(positions).sort().reduce((acc, key) => {
-      acc[key] = positions[key]
-      return acc
-    }, {} as Record<string, string>)
-    
-    await storeJSON(POSITIONS_KEY, sorted)
-  }
-}
 
 export async function GET(
   request: NextRequest,
@@ -138,14 +95,15 @@ export async function GET(
     // Convert the data
     const streamlined = convertSeriesData(endStateData, eventsContent)
     
-    // Update positions with any new players
-    await updatePositions(streamlined)
-    
     // Save converted data to blob storage
     await storeJSON(convertedKey, streamlined)
     
+    // Run analytics on the converted data
+    const analytics = await runAllAnalytics(seriesId, streamlined)
+    
     return NextResponse.json({
       data: streamlined,
+      analytics,
       cached: false
     })
   } catch (error) {

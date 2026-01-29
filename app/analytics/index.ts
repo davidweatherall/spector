@@ -7,6 +7,9 @@ import { counterPickGoldDiff } from './counterPickGoldDiff'
 import { botLaneDrakePrio } from './botLaneDrakePrio'
 import { supportGrubRecall } from './supportGrubRecall'
 import { adcJoinedGrubs } from './adcJoinedGrubs'
+import { playerWorthAt15 } from './playerWorthAt15'
+import { drakeGoldHolding } from './drakeGoldHolding'
+import { comebackStats } from './comebackStats'
 
 /**
  * All analytics functions to run
@@ -17,6 +20,9 @@ const analyticsFunctions: AnalyticsFunction[] = [
   botLaneDrakePrio,
   supportGrubRecall,
   adcJoinedGrubs,
+  playerWorthAt15,
+  drakeGoldHolding,
+  comebackStats,
   // Add more analytics functions here as they are created
 ]
 

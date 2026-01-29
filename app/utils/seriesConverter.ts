@@ -265,7 +265,7 @@ function extractAllGameData(batches: BaseEventBatch[]): Map<number, GameDataColl
         gameDataMap.set(currentGameNumber, pendingGameData)
         
         // Extract players from this event
-        extractPlayersFromEvent(event, pendingGameData, currentGameNumber)
+        extractPlayersFromEvent(event, pendingGameData)
         continue
       }
       
@@ -302,8 +302,8 @@ function extractAllGameData(batches: BaseEventBatch[]): Map<number, GameDataColl
       // Skip if we're not tracking a game
       if (!isTracking || !currentGameData) continue
       
-      // Get current time for this game
-      const time = getEventTimeForGame(event, currentGameNumber)
+      // Get current time from the event's seriesState
+      const time = getEventTime(event)
       
       // Update game length
       if (time > currentGameData.gameLength) {
@@ -311,7 +311,7 @@ function extractAllGameData(batches: BaseEventBatch[]): Map<number, GameDataColl
       }
       
       // Extract coordinates from this event
-      extractCoordinatesFromEvent(event, currentGameData, currentGameNumber, time)
+      extractCoordinatesFromEvent(event, currentGameData, time)
       
       // Process game events
       processGameEvent(event, currentGameData, time)
@@ -328,11 +328,11 @@ function extractAllGameData(batches: BaseEventBatch[]): Map<number, GameDataColl
 
 /**
  * Extract players from a game start event
+ * For series-started-game, the newly started game is the last one in the games array
  */
 function extractPlayersFromEvent(
   event: { actor: { state?: unknown } },
-  gameData: GameDataCollector,
-  gameNumber: number
+  gameData: GameDataCollector
 ): void {
   const actorState = event.actor.state as {
     games?: Array<{
@@ -347,10 +347,9 @@ function extractPlayersFromEvent(
     }>
   }
   
-  // Use gameNumber - 1 as index (game 1 = index 0)
-  const gameIndex = gameNumber - 1
+  // The newly started game is the last one in the array
   const games = actorState?.games || []
-  const gameState = games[gameIndex] || games[games.length - 1]
+  const gameState = games[games.length - 1]
   
   if (gameState?.teams) {
     for (const team of gameState.teams) {
@@ -369,13 +368,12 @@ function extractPlayersFromEvent(
 }
 
 /**
- * Extract coordinates from an event for a specific game
- * Note: seriesState.games contains only the current game at index 0
+ * Extract coordinates from an event
+ * Note: seriesState.games contains only the current active game at index 0
  */
 function extractCoordinatesFromEvent(
-  event: { seriesState?: { games?: Array<{ sequenceNumber?: number, clock?: { currentSeconds: number }, teams?: Array<{ players?: Array<{ id: string, position?: { x: number, y: number }, money: number, totalMoneyEarned: number }> }> }> } },
+  event: { seriesState?: { games?: Array<{ clock?: { currentSeconds: number }, teams?: Array<{ players?: Array<{ id: string, position?: { x: number, y: number }, money: number, totalMoneyEarned: number }> }> }> } },
   gameData: GameDataCollector,
-  gameNumber: number,
   time: number
 ): void {
   if (!event.seriesState?.games || time === 0) return
@@ -385,9 +383,6 @@ function extractCoordinatesFromEvent(
   
   // The current game is always at index 0
   const gameState = event.seriesState.games[0]
-  
-  // Verify this is the correct game
-  if (gameState?.sequenceNumber !== undefined && gameState.sequenceNumber !== gameNumber) return
   
   if (!gameState?.teams) return
   
@@ -573,22 +568,16 @@ function processGameEvent(
 }
 
 /**
- * Get event time for a specific game number
- * Note: seriesState.games contains only the current game at index 0,
- * with sequenceNumber indicating which game it is
+ * Get event time from the current game
+ * Note: seriesState.games contains only the current active game at index 0
  */
-function getEventTimeForGame(
-  event: { seriesState?: { games?: Array<{ sequenceNumber?: number, clock?: { currentSeconds: number } }> } },
-  gameNumber: number
+function getEventTime(
+  event: { seriesState?: { games?: Array<{ clock?: { currentSeconds: number } }> } }
 ): number {
   // The current game is always at index 0 in the games array
-  // Verify it matches the expected game number via sequenceNumber
   const currentGame = event.seriesState?.games?.[0]
   if (currentGame?.clock?.currentSeconds !== undefined) {
-    // Only return time if this event is for the correct game
-    if (currentGame.sequenceNumber === undefined || currentGame.sequenceNumber === gameNumber) {
-      return currentGame.clock.currentSeconds
-    }
+    return currentGame.clock.currentSeconds
   }
   return 0
 }

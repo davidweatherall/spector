@@ -35,8 +35,7 @@ next-env.d.ts
 .env
 
 # downloaded data files
-/data/
-!/data/positions.json
+/data
 /sample-*.json
 /sample-*.zip
 /sample-events-*/

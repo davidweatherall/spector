@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { readJSON, storeJSON } from '../../../storage'
 
 const GRID_API_URL = 'https://api-op.grid.gg/central-data/graphql'
+
+// Storage key generators
+const getTeamsKey = (tournamentId: string) => `cache/teams_tournament_${tournamentId}.json`
 
 interface Team {
   id: string
@@ -39,16 +43,15 @@ interface SeriesResponse {
   errors?: { message: string }[]
 }
 
-// Permanent in-memory cache for teams per tournament (historical data doesn't change)
-const teamsCache = new Map<string, Team[]>()
-
-// Fetch teams for a single tournament (with caching)
+// Fetch teams for a single tournament (with blob storage caching)
 async function fetchTeamsFromTournament(
   apiKey: string,
   tournamentId: string
 ): Promise<Team[]> {
-  // Check cache first (permanent cache)
-  const cached = teamsCache.get(tournamentId)
+  const cacheKey = getTeamsKey(tournamentId)
+  
+  // Check blob storage cache first
+  const cached = await readJSON<Team[]>(cacheKey)
   if (cached) {
     console.log(`Cache hit for tournament ${tournamentId}`)
     return cached
@@ -134,8 +137,8 @@ async function fetchTeamsFromTournament(
 
   const teams = Array.from(teamsMap.values())
   
-  // Cache the result permanently
-  teamsCache.set(tournamentId, teams)
+  // Cache the result in blob storage
+  await storeJSON(cacheKey, teams)
   
   return teams
 }

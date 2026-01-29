@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { promises as fs } from 'fs'
-import path from 'path'
 import { convertSeriesData, StreamlinedSeries } from '../../../../../utils/seriesConverter'
+import { readJSON, storeJSON } from '../../../../../storage'
 
 // Disable all Next.js caching for this route
 export const dynamic = 'force-dynamic'
@@ -9,29 +8,19 @@ export const fetchCache = 'force-no-store'
 
 const API_KEY = process.env.GRID_ESPORTS_API_KEY
 const BASE_URL = 'https://api.grid.gg/file-download'
-const DATA_DIR = path.join(process.cwd(), 'data')
-const CONVERTED_DIR = path.join(DATA_DIR, 'converted')
-const POSITIONS_FILE = path.join(DATA_DIR, 'positions.json')
 
-// Ensure directories exist
-async function ensureDir(dir: string) {
-  try {
-    await fs.access(dir)
-  } catch {
-    await fs.mkdir(dir, { recursive: true })
-  }
-}
+// Storage keys
+const getConvertedKey = (seriesId: string) => `converted/series_${seriesId}.json`
+const POSITIONS_KEY = 'data/positions.json'
 
-// Update positions.json with new players (only adds, never overwrites existing)
-async function updatePositionsFile(streamlined: StreamlinedSeries) {
+// Update positions with new players (only adds, never overwrites existing)
+async function updatePositions(streamlined: StreamlinedSeries) {
   let positions: Record<string, string> = {}
   
-  // Read existing positions file if it exists
-  try {
-    const existing = await fs.readFile(POSITIONS_FILE, 'utf-8')
-    positions = JSON.parse(existing)
-  } catch {
-    // File doesn't exist yet, start with empty object
+  // Read existing positions
+  const existing = await readJSON<Record<string, string>>(POSITIONS_KEY)
+  if (existing) {
+    positions = existing
   }
   
   // Add new players with "unknown" position
@@ -57,13 +46,13 @@ async function updatePositionsFile(streamlined: StreamlinedSeries) {
   
   // Only write if there are new players
   if (hasNewPlayers) {
-    // Sort alphabetically for easier manual editing
+    // Sort alphabetically for easier reading
     const sorted = Object.keys(positions).sort().reduce((acc, key) => {
       acc[key] = positions[key]
       return acc
     }, {} as Record<string, string>)
     
-    await fs.writeFile(POSITIONS_FILE, JSON.stringify(sorted, null, 2))
+    await storeJSON(POSITIONS_KEY, sorted)
   }
 }
 
@@ -81,21 +70,18 @@ export async function GET(
   }
 
   try {
-    await ensureDir(CONVERTED_DIR)
+    const convertedKey = getConvertedKey(seriesId)
     
-    // Check if already converted
-    const convertedPath = path.join(CONVERTED_DIR, `series_${seriesId}.json`)
-    try {
-      const existing = await fs.readFile(convertedPath, 'utf-8')
+    // Check if already converted in blob storage
+    const cached = await readJSON<StreamlinedSeries>(convertedKey)
+    if (cached) {
       return NextResponse.json({
-        data: JSON.parse(existing) as StreamlinedSeries,
+        data: cached,
         cached: true
       })
-    } catch {
-      // Not cached, need to convert
     }
 
-    // Fetch end-state (disable cache for large responses)
+    // Fetch end-state
     const endStateRes = await fetch(`${BASE_URL}/end-state/grid/series/${seriesId}`, {
       headers: {
         'Accept': 'application/json',
@@ -113,7 +99,7 @@ export async function GET(
 
     const endStateData = await endStateRes.json()
 
-    // Fetch events (disable cache - files are too large for Next.js cache)
+    // Fetch events ZIP
     const eventsRes = await fetch(`${BASE_URL}/events/grid/series/${seriesId}`, {
       headers: {
         'Accept': 'application/zip',
@@ -129,41 +115,34 @@ export async function GET(
       )
     }
 
-    // Get events zip and extract
+    // Get events zip and extract in memory
     const eventsBuffer = await eventsRes.arrayBuffer()
-    const eventsDir = path.join(DATA_DIR, 'events', `events_${seriesId}`)
-    await ensureDir(eventsDir)
     
-    // Save zip temporarily
-    const zipPath = path.join(eventsDir, `events_${seriesId}.zip`)
-    await fs.writeFile(zipPath, Buffer.from(eventsBuffer))
-    
-    // Extract zip using AdmZip
+    // Extract zip using AdmZip (in memory)
     const AdmZip = (await import('adm-zip')).default
-    const zip = new AdmZip(zipPath)
-    zip.extractAllTo(eventsDir, true)
+    const zip = new AdmZip(Buffer.from(eventsBuffer))
+    const zipEntries = zip.getEntries()
     
     // Find the JSONL file
-    const files = await fs.readdir(eventsDir)
-    const jsonlFile = files.find(f => f.endsWith('.jsonl'))
+    const jsonlEntry = zipEntries.find(entry => entry.entryName.endsWith('.jsonl'))
     
-    if (!jsonlFile) {
+    if (!jsonlEntry) {
       return NextResponse.json(
         { error: 'No JSONL file found in events archive' },
         { status: 500 }
       )
     }
     
-    const eventsContent = await fs.readFile(path.join(eventsDir, jsonlFile), 'utf-8')
+    const eventsContent = jsonlEntry.getData().toString('utf-8')
     
     // Convert the data
     const streamlined = convertSeriesData(endStateData, eventsContent)
     
-    // Update positions.json with any new players
-    await updatePositionsFile(streamlined)
+    // Update positions with any new players
+    await updatePositions(streamlined)
     
-    // Save converted data
-    await fs.writeFile(convertedPath, JSON.stringify(streamlined, null, 2))
+    // Save converted data to blob storage
+    await storeJSON(convertedKey, streamlined)
     
     return NextResponse.json({
       data: streamlined,

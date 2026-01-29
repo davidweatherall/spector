@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { readJSON, storeJSON } from '../../../storage'
 
 const GRID_API_URL = 'https://api-op.grid.gg/central-data/graphql'
 
-// Permanent in-memory cache for tournaments (historical data doesn't change)
-const tournamentsCache = new Map<string, unknown>()
+// Storage keys
+const getTournamentsKey = (titleId: string) => `cache/tournaments_${titleId}.json`
 
 interface Tournament {
   id: string
@@ -33,6 +34,13 @@ interface TournamentsResponse {
     }
   }
   errors?: { message: string }[]
+}
+
+interface TournamentsData {
+  tournaments: TournamentWithLeague[]
+  leagues: string[]
+  tournamentsByLeague: Record<string, TournamentWithLeague[]>
+  totalCount: number
 }
 
 // Extract league name from tournament name (before the ' - ')
@@ -134,20 +142,18 @@ export async function GET(request: NextRequest) {
 
     // titleId: 3 = League of Legends, 25 = Valorant
     const titleId = game === 'valorant' ? '25' : '3'
+    const cacheKey = getTournamentsKey(titleId)
 
     // Check for force refresh param
     const forceRefresh = searchParams.get('refresh') === 'true'
     
-    // Check cache first (permanent cache)
+    // Check blob storage cache first
     if (!forceRefresh) {
-      const cached = tournamentsCache.get(titleId)
+      const cached = await readJSON<TournamentsData>(cacheKey)
       if (cached) {
-        console.log('Returning cached tournaments')
+        console.log('Returning cached tournaments from blob storage')
         return NextResponse.json(cached)
       }
-    } else {
-      // Clear cache if force refresh
-      tournamentsCache.delete(titleId)
     }
 
     // Fetch all tournaments with pagination
@@ -205,15 +211,15 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const responseData = {
+    const responseData: TournamentsData = {
       tournaments,
       leagues,
       tournamentsByLeague,
       totalCount: tournaments.length,
     }
     
-    // Cache the response permanently
-    tournamentsCache.set(titleId, responseData)
+    // Cache the response in blob storage
+    await storeJSON(cacheKey, responseData)
     
     return NextResponse.json(responseData)
   } catch (error) {

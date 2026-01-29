@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { readJSON, storeJSON } from '../../../storage'
 
 const GRID_API_URL = 'https://api-op.grid.gg/central-data/graphql'
+
+// Storage key generator
+const getGamesKey = (teamId: string, tournamentIds: string[]) => 
+  `cache/games_${teamId}_${tournamentIds.sort().join('_')}.json`
 
 interface TeamInfo {
   id: string
@@ -47,9 +52,11 @@ export interface Game {
   isHome: boolean
 }
 
-// Permanent cache for team games (keyed by teamId + tournamentIds)
-// Data is historical and won't change
-const gamesCache = new Map<string, Game[]>()
+interface GamesData {
+  games: Game[]
+  totalCount: number
+  teamName: string
+}
 
 async function fetchGamesForTournament(
   teamId: string,
@@ -160,19 +167,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create cache key from teamId + sorted tournamentIds
-    const cacheKey = `${teamId}:${tournamentIds.sort().join(',')}`
+    const cacheKey = getGamesKey(teamId, tournamentIds)
     
     console.log(`\n=== Fetching games for team: ${teamName} (ID: ${teamId}) ===`)
     console.log(`Tournaments: ${tournamentIds.length}`)
     
-    // Check cache (permanent - historical data doesn't change)
-    const cached = gamesCache.get(cacheKey)
+    // Check blob storage cache first
+    const cached = await readJSON<GamesData>(cacheKey)
     if (cached) {
-      console.log(`Returning ${cached.length} cached games`)
+      console.log(`Returning ${cached.games.length} cached games from blob storage`)
       return NextResponse.json({
-        games: cached,
-        totalCount: cached.length,
+        ...cached,
         cached: true,
       })
     }
@@ -221,14 +226,16 @@ export async function POST(request: NextRequest) {
     // Limit to 20 most recent
     const limitedGames = uniqueGames.slice(0, 20)
 
-    // Cache the result permanently
-    gamesCache.set(cacheKey, limitedGames)
-
-    return NextResponse.json({
+    const responseData: GamesData = {
       games: limitedGames,
       totalCount: limitedGames.length,
       teamName,
-    })
+    }
+
+    // Cache the result in blob storage
+    await storeJSON(cacheKey, responseData)
+
+    return NextResponse.json(responseData)
   } catch (error) {
     console.error('GRID API error:', error)
     

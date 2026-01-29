@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { readJSON, storeJSON } from '../../../../../storage'
 
 // Disable Next.js caching
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 
-// Permanent cache for end-state data
-const endStateCache = new Map<string, unknown>()
+// Storage key generator
+const getEndStateKey = (seriesId: string) => `cache/end-state_${seriesId}.json`
 
 export async function GET(
   request: NextRequest,
@@ -23,8 +24,10 @@ export async function GET(
       )
     }
 
-    // Check cache first
-    const cached = endStateCache.get(seriesId)
+    const cacheKey = getEndStateKey(seriesId)
+
+    // Check blob storage cache first
+    const cached = await readJSON<unknown>(cacheKey)
     if (cached) {
       return NextResponse.json({ data: cached, cached: true })
     }
@@ -48,8 +51,8 @@ export async function GET(
 
     const data = await response.json()
 
-    // Cache permanently
-    endStateCache.set(seriesId, data)
+    // Cache in blob storage
+    await storeJSON(cacheKey, data)
 
     return NextResponse.json({ data, cached: false })
   } catch (error) {

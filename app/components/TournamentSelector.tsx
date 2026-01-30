@@ -23,6 +23,8 @@ interface ScoutingReport {
   goldLeadAt15ByRole: any
   drakeGoldHoldingStats: any
   comebackStats: any
+  classWinRateStats: any
+  banPhaseStats: any
   seriesBreakdown: any[]
 }
 
@@ -403,31 +405,43 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
         )}
       </div>
 
-      {/* Team Actions Panel - CTA for scouting report */}
+      {/* Team Actions Panel - CTA for scouting report (LoL only) */}
       {selectedTeam && (
         <div className={styles.teamActionsPanel}>
           <div className={styles.teamActionsHeader}>
             <h3 className={styles.teamActionsTitle}>{selectedTeam.name}</h3>
             {gamesLoading ? (
               <span className={styles.gamesLoadingText}>Loading games...</span>
+            ) : gamesError ? (
+              <div className={styles.gamesErrorContainer}>
+                <span className={styles.gamesErrorText}>{gamesError}</span>
+                <button 
+                  className={styles.retryButton}
+                  onClick={() => fetchGames()}
+                >
+                  Retry
+                </button>
+              </div>
             ) : games.length > 0 ? (
               <span className={styles.gamesCount}>{games.length} Games Found</span>
             ) : null}
           </div>
-          <div className={styles.teamActionsButtons}>
-            <button
-              className={`${styles.scoutingButton} ${scoutingLoading ? styles.scoutingButtonLoading : ''}`}
-              onClick={handleGenerateScoutingReport}
-              disabled={scoutingLoading || games.length === 0}
-            >
-              {scoutingLoading ? 'Generating...' : 'Generate Scouting Report'}
-            </button>
-          </div>
+          {game === 'lol' && (
+            <div className={styles.teamActionsButtons}>
+              <button
+                className={`${styles.scoutingButton} ${scoutingLoading ? styles.scoutingButtonLoading : ''}`}
+                onClick={handleGenerateScoutingReport}
+                disabled={scoutingLoading || games.length === 0}
+              >
+                {scoutingLoading ? 'Generating...' : 'Generate Scouting Report'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Scouting Report Panel */}
-      {scoutingLoading && (
+      {/* Scouting Report Panel - LoL only */}
+      {game === 'lol' && scoutingLoading && (
         <div className={styles.scoutingPanel}>
           <div className={styles.scoutingProgress}>
             <div className={styles.scoutingProgressTitle}>
@@ -446,7 +460,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
         </div>
       )}
 
-      {scoutingError && (
+      {game === 'lol' && scoutingError && (
         <div className={styles.scoutingPanel}>
           <div className={styles.error} style={{ padding: '1rem' }}>
             Error: {scoutingError}
@@ -454,7 +468,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
         </div>
       )}
 
-      {scoutingReport && !scoutingLoading && (
+      {game === 'lol' && scoutingReport && !scoutingLoading && (
         <div className={styles.scoutingPanel}>
           <div className={styles.scoutingPanelHeader}>
             <h3 className={styles.scoutingPanelTitle}>
@@ -470,6 +484,127 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
             <div className={styles.pickBanAnalysis}>
               <div className={styles.pickBanHeader}>
                 <h4 className={styles.pickBanTitle}>Pick Ban Analysis</h4>
+              </div>
+              
+              {/* Bans by Game (Fearless Mode) */}
+              {scoutingReport.banPhaseStats.bansByGame && (
+                <div className={styles.bansByGameSection}>
+                  <div className={styles.banSectionLabel}>Bans by Game (Fearless Mode)</div>
+                  <div className={styles.bansByGameGrid}>
+                    {/* Game 1 */}
+                    <div className={styles.bansByGameColumn}>
+                      <div className={styles.bansByGameHeader}>Game 1</div>
+                      <div className={styles.bansByGameList}>
+                        {scoutingReport.banPhaseStats.bansByGame.game1.slice(0, 8).map((ban: any) => (
+                          <div key={ban.champion} className={styles.bansByGameItem}>
+                            <Image
+                              src={getChampionImagePath(ban.champion)}
+                              alt={ban.champion}
+                              width={24}
+                              height={24}
+                              unoptimized
+                            />
+                            <span className={styles.bansByGameName}>{ban.champion}</span>
+                            <span className={styles.bansByGamePercent}>{Math.round(ban.percentage)}%</span>
+                          </div>
+                        ))}
+                        {scoutingReport.banPhaseStats.bansByGame.game1.length === 0 && (
+                          <span className={styles.noDataText}>No data</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Game 2 */}
+                    <div className={styles.bansByGameColumn}>
+                      <div className={styles.bansByGameHeader}>Game 2 <span className={styles.bansByGameSubheader}>(when available)</span></div>
+                      <div className={styles.bansByGameList}>
+                        {scoutingReport.banPhaseStats.bansByGame.game2.slice(0, 8).map((ban: any) => (
+                          <div key={ban.champion} className={styles.bansByGameItem}>
+                            <Image
+                              src={getChampionImagePath(ban.champion)}
+                              alt={ban.champion}
+                              width={24}
+                              height={24}
+                              unoptimized
+                            />
+                            <span className={styles.bansByGameName}>{ban.champion}</span>
+                            <span className={styles.bansByGamePercent}>{Math.round(ban.percentage)}%</span>
+                          </div>
+                        ))}
+                        {scoutingReport.banPhaseStats.bansByGame.game2.length === 0 && (
+                          <span className={styles.noDataText}>No data</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Game 3+ */}
+                    <div className={styles.bansByGameColumn}>
+                      <div className={styles.bansByGameHeader}>Game 3+ <span className={styles.bansByGameSubheader}>(when available)</span></div>
+                      <div className={styles.bansByGameList}>
+                        {scoutingReport.banPhaseStats.bansByGame.game3.slice(0, 8).map((ban: any) => (
+                          <div key={ban.champion} className={styles.bansByGameItem}>
+                            <Image
+                              src={getChampionImagePath(ban.champion)}
+                              alt={ban.champion}
+                              width={24}
+                              height={24}
+                              unoptimized
+                            />
+                            <span className={styles.bansByGameName}>{ban.champion}</span>
+                            <span className={styles.bansByGamePercent}>{Math.round(ban.percentage)}%</span>
+                          </div>
+                        ))}
+                        {scoutingReport.banPhaseStats.bansByGame.game3.length === 0 && (
+                          <span className={styles.noDataText}>No data</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Second Ban Phase Patterns */}
+              {scoutingReport.banPhaseStats.secondBanPhasePatterns && scoutingReport.banPhaseStats.secondBanPhasePatterns.length > 0 && (
+                <div className={styles.secondBanPhaseSection}>
+                  <div className={styles.banSectionLabel}>Second Ban Phase (When we pick → We tend to ban)</div>
+                  <div className={styles.secondBanPhaseGrid}>
+                    {scoutingReport.banPhaseStats.secondBanPhasePatterns.slice(0, 8).map((pattern: any) => (
+                      <div key={pattern.ifWePick} className={styles.secondBanPhaseCard}>
+                        <div className={styles.secondBanPhaseTrigger}>
+                          <span className={styles.secondBanPhaseLabel}>If we pick</span>
+                          <Image
+                            src={getChampionImagePath(pattern.ifWePick)}
+                            alt={pattern.ifWePick}
+                            width={32}
+                            height={32}
+                            unoptimized
+                          />
+                          <span className={styles.secondBanPhaseName}>{pattern.ifWePick}</span>
+                          <span className={styles.secondBanPhaseSample}>({pattern.sampleSize})</span>
+                        </div>
+                        <div className={styles.secondBanPhaseResponses}>
+                          {pattern.weBan.slice(0, 3).map((ban: any) => (
+                            <div key={ban.champion} className={styles.secondBanPhaseResponse}>
+                              <Image
+                                src={getChampionImagePath(ban.champion)}
+                                alt={ban.champion}
+                                width={24}
+                                height={24}
+                                unoptimized
+                              />
+                              <span className={styles.secondBanPhaseResponseName}>{ban.champion}</span>
+                              <span className={styles.secondBanPhasePercent}>{Math.round(ban.percentage)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Pick Side Toggle */}
+              <div className={styles.pickSideToggleSection}>
                 <div className={styles.pickSideToggle}>
                   <button
                     className={`${styles.pickSideButton} ${selectedBanPhasePickSide === 'first' ? styles.pickSideButtonActive : ''}`}
@@ -702,36 +837,11 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
           )}
           
           <div className={styles.scoutingContent}>
-            {/* Comeback Stats */}
-            {scoutingReport.comebackStats && (
-              <div className={styles.scoutingCard}>
-                <div className={styles.scoutingCardTitle}>Comeback & Lead Stats</div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Games Analyzed</span>
-                  <span className={styles.scoutingStatValue}>
-                    {scoutingReport.comebackStats.totalGames}
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Comeback Rate</span>
-                  <span className={`${styles.scoutingStatValue} ${styles.scoutingStatPositive}`}>
-                    {scoutingReport.comebackStats.comebackRate.toFixed(1)}%
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Lead Hold Rate</span>
-                  <span className={`${styles.scoutingStatValue} ${styles.scoutingStatPositive}`}>
-                    {scoutingReport.comebackStats.leadHoldRate.toFixed(1)}%
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Avg Comeback Deficit</span>
-                  <span className={styles.scoutingStatValue}>
-                    {Math.round(scoutingReport.comebackStats.avgComebackDeficit).toLocaleString()} gold
-                  </span>
-                </div>
+            {/* Game Performance Stats Section */}
+            <div className={styles.gameStatsSection}>
+              <div className={styles.gameStatsSectionHeader}>
+                <h4 className={styles.gameStatsSectionTitle}>Game Performance Stats</h4>
               </div>
-            )}
 
             {/* Gold Lead at 15 by Role */}
             {scoutingReport.goldLeadAt15ByRole && (
@@ -832,10 +942,181 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                 )}
               </div>
             )}
+              
+              {/* Class Win Rates */}
+              {scoutingReport.classWinRateStats && (
+                <div className={styles.classWinRateSection}>
+                  <div className={styles.classWinRateGrid}>
+                    {/* Top Lane */}
+                    <div className={styles.classWinRateColumn}>
+                      <div className={styles.classWinRateHeader}>
+                        <span className={styles.classWinRateTitle}>Top Lane</span>
+                        <span className={styles.classWinRateColumnHeader}>Games</span>
+                        <span className={styles.classWinRateColumnHeader}>Win %</span>
+                      </div>
+                      <div className={styles.classWinRateList}>
+                        {scoutingReport.classWinRateStats.top.slice(0, 6).map((stat: any) => (
+                          <div key={stat.className} className={styles.classWinRateItem}>
+                            <span className={styles.classWinRateName}>{stat.className}</span>
+                            <span className={styles.classWinRateGames}>{stat.games}</span>
+                            <span className={`${styles.classWinRatePercent} ${stat.winRate >= 50 ? styles.classWinRatePositive : styles.classWinRateNegative}`}>
+                              {Math.round(stat.winRate)}%
+                            </span>
+                          </div>
+                        ))}
+                        {(!scoutingReport.classWinRateStats.top || scoutingReport.classWinRateStats.top.length === 0) && (
+                          <span className={styles.noDataText}>No data</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Jungle */}
+                    <div className={styles.classWinRateColumn}>
+                      <div className={styles.classWinRateHeader}>
+                        <span className={styles.classWinRateTitle}>Jungle</span>
+                        <span className={styles.classWinRateColumnHeader}>Games</span>
+                        <span className={styles.classWinRateColumnHeader}>Win %</span>
+                      </div>
+                      <div className={styles.classWinRateList}>
+                        {scoutingReport.classWinRateStats.jungle.slice(0, 6).map((stat: any) => (
+                          <div key={stat.className} className={styles.classWinRateItem}>
+                            <span className={styles.classWinRateName}>{stat.className}</span>
+                            <span className={styles.classWinRateGames}>{stat.games}</span>
+                            <span className={`${styles.classWinRatePercent} ${stat.winRate >= 50 ? styles.classWinRatePositive : styles.classWinRateNegative}`}>
+                              {Math.round(stat.winRate)}%
+                            </span>
+                          </div>
+                        ))}
+                        {(!scoutingReport.classWinRateStats.jungle || scoutingReport.classWinRateStats.jungle.length === 0) && (
+                          <span className={styles.noDataText}>No data</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Support */}
+                    <div className={styles.classWinRateColumn}>
+                      <div className={styles.classWinRateHeader}>
+                        <span className={styles.classWinRateTitle}>Support</span>
+                        <span className={styles.classWinRateColumnHeader}>Games</span>
+                        <span className={styles.classWinRateColumnHeader}>Win %</span>
+                      </div>
+                      <div className={styles.classWinRateList}>
+                        {scoutingReport.classWinRateStats.support.slice(0, 6).map((stat: any) => (
+                          <div key={stat.className} className={styles.classWinRateItem}>
+                            <span className={styles.classWinRateName}>{stat.className}</span>
+                            <span className={styles.classWinRateGames}>{stat.games}</span>
+                            <span className={`${styles.classWinRatePercent} ${stat.winRate >= 50 ? styles.classWinRatePositive : styles.classWinRateNegative}`}>
+                              {Math.round(stat.winRate)}%
+                            </span>
+                          </div>
+                        ))}
+                        {(!scoutingReport.classWinRateStats.support || scoutingReport.classWinRateStats.support.length === 0) && (
+                          <span className={styles.noDataText}>No data</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
+              {/* Stats Grid */}
+              <div className={styles.gameStatsGrid}>
+                {/* Left Column */}
+                <div className={styles.gameStatsColumn}>
+                  {/* Comeback Stats */}
+                  {scoutingReport.comebackStats && (
+                    <div className={styles.scoutingCard}>
+                      <div className={styles.scoutingCardTitle}>Comeback & Lead Stats</div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Games Analyzed</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.comebackStats.totalGames}</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Comeback Rate</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.comebackStats.comebackRate.toFixed(1)}%</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Lead Hold Rate</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.comebackStats.leadHoldRate.toFixed(1)}%</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Avg Comeback Deficit</span>
+                        <span className={styles.scoutingStatValue}>{Math.round(scoutingReport.comebackStats.avgComebackDeficit).toLocaleString()} gold</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Drake Priority */}
+                  {scoutingReport.drakePrioStats && (
+                    <div className={styles.scoutingCard}>
+                      <div className={styles.scoutingCardTitle}>Bot Lane Drake Priority</div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Total Drakes</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.drakePrioStats.totalDrakes}</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Times Had Prio</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.drakePrioStats.drakesWhenHadPrio}</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>No Prio</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.drakePrioStats.drakesWhenNoPrio}</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Secure % w/ Bot Prio</span>
+                        <span className={`${styles.scoutingStatValue} ${scoutingReport.drakePrioStats.prioWinRate >= 50 ? styles.scoutingStatPositive : styles.scoutingStatNegative}`}>
+                          {scoutingReport.drakePrioStats.prioWinRate.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ADC Grub Participation */}
+                  {scoutingReport.adcGrubStats && (
+                    <div className={styles.scoutingCard}>
+                      <div className={styles.scoutingCardTitle}>ADC Grub Participation</div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>First Grubs Analyzed</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.adcGrubStats.totalFirstGrubs}</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>ADC Present</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.adcGrubStats.grubsWithAdcPresent}</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>ADC Present Rate</span>
+                        <span className={`${styles.scoutingStatValue} ${scoutingReport.adcGrubStats.adcPresentRate >= 50 ? styles.scoutingStatPositive : styles.scoutingStatNegative}`}>
+                          {scoutingReport.adcGrubStats.adcPresentRate.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gold Held at Drake */}
+                  {scoutingReport.drakeGoldHoldingStats && (
+                    <div className={styles.scoutingCard}>
+                      <div className={styles.scoutingCardTitle}>Gold Held at Drake</div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Drakes Analyzed</span>
+                        <span className={styles.scoutingStatValue}>{scoutingReport.drakeGoldHoldingStats.totalDrakes}</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Avg Mid Gold Held</span>
+                        <span className={styles.scoutingStatValue}>{Math.round(scoutingReport.drakeGoldHoldingStats.avgMidGoldHeld)}</span>
+                      </div>
+                      <div className={styles.scoutingStat}>
+                        <span className={styles.scoutingStatLabel}>Avg ADC Gold Held</span>
+                        <span className={styles.scoutingStatValue}>{Math.round(scoutingReport.drakeGoldHoldingStats.avgAdcGoldHeld)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column */}
+                <div className={styles.gameStatsColumn}>
             {/* Support Grub Timing */}
             {scoutingReport.supportGrubStats && scoutingReport.supportGrubStats.avgRecallTimeBeforeGrub !== null && (
-              <div className={`${styles.scoutingCard} ${styles.scoutingCardWide}`}>
+              <div className={styles.scoutingCard}>
                 <div className={styles.scoutingCardTitle}>Support Grub Recall Timings</div>
                 <div className={styles.scoutingStatRow}>
                   <div className={styles.scoutingStat}>
@@ -926,100 +1207,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                 )}
               </div>
             )}
-
-            {/* Drake Priority */}
-            {scoutingReport.drakePrioStats && (
-              <div className={styles.scoutingCard}>
-                <div className={styles.scoutingCardTitle}>Bot Lane Drake Priority</div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Total Drakes</span>
-                  <span className={styles.scoutingStatValue}>
-                    {scoutingReport.drakePrioStats.totalDrakes}
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Times Had Prio</span>
-                  <span className={styles.scoutingStatValue}>
-                    {scoutingReport.drakePrioStats.drakesWhenNoPrio}
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Secured w/ Prio</span>
-                  <span className={styles.scoutingStatValue}>
-                    {scoutingReport.drakePrioStats.drakesWhenHadPrio}
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Secure % w/ Bot Prio</span>
-                  <span className={`${styles.scoutingStatValue} ${scoutingReport.drakePrioStats.prioWinRate >= 50 ? styles.scoutingStatPositive : styles.scoutingStatNegative}`}>
-                    {scoutingReport.drakePrioStats.prioWinRate.toFixed(1)}%
-                  </span>
                 </div>
               </div>
-            )}
-
-            {/* ADC Grub Presence */}
-            {scoutingReport.adcGrubStats && (
-              <div className={styles.scoutingCard}>
-                <div className={styles.scoutingCardTitle}>ADC Grub Participation</div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>First Grubs Analyzed</span>
-                  <span className={styles.scoutingStatValue}>
-                    {scoutingReport.adcGrubStats.totalFirstGrubs}
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>ADC Present</span>
-                  <span className={styles.scoutingStatValue}>
-                    {scoutingReport.adcGrubStats.grubsWithAdcPresent}
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>ADC Present Rate</span>
-                  <span className={`${styles.scoutingStatValue} ${
-                    scoutingReport.adcGrubStats.adcPresentRate > 50 
-                      ? styles.scoutingStatPositive 
-                      : styles.scoutingStatNegative
-                  }`}>
-                    {scoutingReport.adcGrubStats.adcPresentRate.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Drake Gold Holding */}
-            {scoutingReport.drakeGoldHoldingStats && (
-              <div className={styles.scoutingCard}>
-                <div className={styles.scoutingCardTitle}>Gold Held at Drake</div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Drakes Analyzed</span>
-                  <span className={styles.scoutingStatValue}>
-                    {scoutingReport.drakeGoldHoldingStats.totalDrakes}
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Avg Mid Gold Held</span>
-                  <span className={`${styles.scoutingStatValue} ${
-                    scoutingReport.drakeGoldHoldingStats.avgMidGoldHeld > 800 
-                      ? styles.scoutingStatNegative 
-                      : styles.scoutingStatPositive
-                  }`}>
-                    {Math.round(scoutingReport.drakeGoldHoldingStats.avgMidGoldHeld).toLocaleString()}
-                  </span>
-                </div>
-                <div className={styles.scoutingStat}>
-                  <span className={styles.scoutingStatLabel}>Avg ADC Gold Held</span>
-                  <span className={`${styles.scoutingStatValue} ${
-                    scoutingReport.drakeGoldHoldingStats.avgAdcGoldHeld > 800 
-                      ? styles.scoutingStatNegative 
-                      : styles.scoutingStatPositive
-                  }`}>
-                    {Math.round(scoutingReport.drakeGoldHoldingStats.avgAdcGoldHeld).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            )}
-
             {/* Counter Pick Stats */}
             {scoutingReport.counterPickStats && (
               <div className={`${styles.scoutingCard} ${styles.scoutingCardWide}`}>
@@ -1144,6 +1333,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                 })()}
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -1197,9 +1387,9 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                         <span className={styles.gameOpponent}>{gameItem.opponent.name}</span>
                       </div>
                       <div className={styles.gameTournament}>
-                        {isAnalyzing && <span className={styles.analyzingBadge}>Analysing...</span>}
-                        {isCompleted && !isAnalyzing && <span className={styles.completedBadge}>✓</span>}
-                        {!isAnalyzing && !isCompleted && gameItem.tournament}
+                        {game === 'lol' && isAnalyzing && <span className={styles.analyzingBadge}>Analysing...</span>}
+                        {game === 'lol' && isCompleted && !isAnalyzing && <span className={styles.completedBadge}>✓</span>}
+                        {(game !== 'lol' || (!isAnalyzing && !isCompleted)) && gameItem.tournament}
                       </div>
                       <Link 
                         href={`/${game === 'lol' ? 'lol' : 'val'}/series/${gameItem.id}`}
@@ -1209,8 +1399,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                       </Link>
                     </div>
                     
-                    {/* Draft info for each game in this series */}
-                    {seriesDraftData?.games && seriesDraftData.games.length > 0 && (
+                    {/* Draft info for each game in this series - LoL only */}
+                    {game === 'lol' && seriesDraftData?.games && seriesDraftData.games.length > 0 && (
                       <div className={styles.draftContainer}>
                         {seriesDraftData.games.map((gameDraft: any) => {
                           // Group consecutive actions by same team and type

@@ -223,7 +223,7 @@ export function GridDataProvider({ children }: GridDataProviderProps) {
       const response = await fetch('/api/grid/teams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tournamentIds }),
+        body: JSON.stringify({ tournamentIds, game: 'valorant' }),
       })
 
       if (!response.ok) {
@@ -299,6 +299,7 @@ export function GridDataProvider({ children }: GridDataProviderProps) {
           teamId: selectedValTeam.id,
           teamName: selectedValTeam.name,
           tournamentIds,
+          game: 'valorant',
         }),
       })
 

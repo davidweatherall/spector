@@ -1,5 +1,8 @@
+'use client'
+
 import Link from 'next/link'
 import styles from '../components/GamePageLayout.module.css'
+import TournamentSelector from '../components/TournamentSelector'
 
 export default function ValorantPage() {
   return (
@@ -8,6 +11,9 @@ export default function ValorantPage() {
         <Link href="/" className={styles.logo}>
           SPECTOR
         </Link>
+        <h1 className={`${styles.pageTitle} ${styles.pageTitleVal}`}>
+          VALORANT
+        </h1>
         <Link 
           href="/lol" 
           className={`${styles.switchButton} ${styles.switchButtonLol}`}
@@ -19,10 +25,9 @@ export default function ValorantPage() {
       <div className={`${styles.accentBar} ${styles.accentBarVal}`} />
 
       <main className={styles.main}>
-        <h1 className={`${styles.pageTitle} ${styles.pageTitleVal}`}>
-          VALORANT
-        </h1>
-        <p className={styles.pageContent}>Hello World</p>
+        <div className={styles.contentSection}>
+          <TournamentSelector game="valorant" />
+        </div>
       </main>
     </div>
   )

@@ -3,9 +3,11 @@ import { readJSON, storeJSON } from '../../../storage'
 
 const GRID_API_URL = 'https://api-op.grid.gg/central-data/graphql'
 
-// Storage key generator
-const getGamesKey = (teamId: string, tournamentIds: string[]) => 
-  `cache/games_${teamId}_${tournamentIds.sort().join('_')}.json`
+// Storage key generator - Valorant data stored in val/ prefix
+const getGamesKey = (game: string, teamId: string, tournamentIds: string[]) => 
+  game === 'valorant'
+    ? `val/cache/games_${teamId}_${tournamentIds.sort().join('_')}.json`
+    : `cache/games_${teamId}_${tournamentIds.sort().join('_')}.json`
 
 interface TeamInfo {
   id: string
@@ -58,91 +60,123 @@ interface GamesData {
   teamName: string
 }
 
-async function fetchGamesForTournament(
+// Fetch all games for a team in a single API call, then filter by tournament IDs
+async function fetchAllGamesForTeam(
   teamId: string,
-  tournamentId: string,
+  tournamentIds: string[],
   apiKey: string
 ): Promise<Game[]> {
-  const query = `
-    query GetTeamSeries($teamId: ID!, $tournamentId: ID!) {
-      allSeries(
-        filter: { teamId: $teamId, tournamentId: $tournamentId }
-        first: 50
-        orderBy: StartTimeScheduled
-        orderDirection: DESC
-      ) {
-        edges {
-          node {
-            id
-            startTimeScheduled
-            tournament {
+  const tournamentIdSet = new Set(tournamentIds)
+  const allGames: Game[] = []
+  let afterCursor: string | null = null
+  let hasNextPage = true
+  let pageCount = 0
+  const maxPages = 5 // Limit pagination to avoid rate limits
+
+  while (hasNextPage && pageCount < maxPages) {
+    pageCount++
+    
+    // Query all series for the team (no tournament filter - more efficient)
+    const query = `
+      query GetTeamSeries($teamId: ID!, $after: String) {
+        allSeries(
+          filter: { teamId: $teamId }
+          first: 50
+          after: $after
+          orderBy: StartTimeScheduled
+          orderDirection: DESC
+        ) {
+          edges {
+            node {
               id
-              name
-            }
-            teams {
-              baseInfo {
+              startTimeScheduled
+              tournament {
                 id
                 name
               }
+              teams {
+                baseInfo {
+                  id
+                  name
+                }
+              }
             }
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
           }
         }
       }
+    `
+
+    const response = await fetch(GRID_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        query,
+        variables: { teamId, after: afterCursor },
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`GRID API error: ${response.status}`)
     }
-  `
 
-  const response = await fetch(GRID_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      query,
-      variables: { teamId, tournamentId },
-    }),
-  })
+    const result: SeriesResponse = await response.json()
 
-  if (!response.ok) {
-    throw new Error(`GRID API error: ${response.status}`)
-  }
+    if (result.errors) {
+      throw new Error(result.errors[0]?.message || 'GraphQL error')
+    }
 
-  const result: SeriesResponse = await response.json()
+    const { edges, pageInfo } = result.data.allSeries
 
-  if (result.errors) {
-    throw new Error(result.errors[0]?.message || 'GraphQL error')
-  }
-
-  const games = result.data.allSeries.edges
-    .map(edge => {
+    for (const edge of edges) {
       const series = edge.node
-      const teams = series.teams.filter(t => t.baseInfo)
+      const tournamentId = series.tournament?.id
       
-      if (teams.length !== 2) return null
+      // Only include games from selected tournaments
+      if (!tournamentId || !tournamentIdSet.has(tournamentId)) {
+        continue
+      }
+      
+      const teams = series.teams.filter(t => t.baseInfo)
+      if (teams.length !== 2) continue
       
       const isHome = teams[0].baseInfo?.id === teamId
       const opponentTeam = isHome ? teams[1].baseInfo : teams[0].baseInfo
       
-      if (!opponentTeam) return null
+      if (!opponentTeam) continue
 
-      return {
+      allGames.push({
         id: series.id,
         date: series.startTimeScheduled,
         tournament: series.tournament?.name || 'Unknown Tournament',
-        tournamentId: series.tournament?.id || tournamentId,
+        tournamentId: tournamentId,
         opponent: opponentTeam,
         isHome,
-      }
-    })
-    .filter((game): game is Game => game !== null)
-  
-  console.log(`Fetched ${games.length} games for team ${teamId} in tournament ${tournamentId}`)
-  return games
+      })
+    }
+
+    hasNextPage = pageInfo.hasNextPage
+    afterCursor = pageInfo.endCursor
+    
+    // Small delay between pages
+    if (hasNextPage && pageCount < maxPages) {
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+  }
+
+  console.log(`Fetched ${allGames.length} games for team ${teamId} from ${tournamentIds.length} tournaments (${pageCount} API calls)`)
+  return allGames
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { teamId, teamName, tournamentIds } = await request.json()
+    const { teamId, teamName, tournamentIds, game = 'lol' } = await request.json()
 
     if (!teamId) {
       return NextResponse.json(
@@ -167,10 +201,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const cacheKey = getGamesKey(teamId, tournamentIds)
+    const cacheKey = getGamesKey(game, teamId, tournamentIds)
     
     console.log(`\n=== Fetching games for team: ${teamName} (ID: ${teamId}) ===`)
-    console.log(`Tournaments: ${tournamentIds.length}`)
+    console.log(`Filtering by ${tournamentIds.length} tournaments`)
     
     // Check blob storage cache first
     const cached = await readJSON<GamesData>(cacheKey)
@@ -182,29 +216,9 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Fetch games for each tournament
-    const allGames: Game[] = []
-    
-    for (const tournamentId of tournamentIds) {
-      try {
-        const games = await fetchGamesForTournament(teamId, tournamentId, apiKey)
-        allGames.push(...games)
-        
-        // Small delay to avoid rate limiting
-        if (tournamentIds.length > 1) {
-          await new Promise(resolve => setTimeout(resolve, 100))
-        }
-      } catch (error) {
-        // If rate limited, return what we have so far
-        if (error instanceof Error && error.message.includes('rate limit')) {
-          if (allGames.length > 0) {
-            break
-          }
-          throw error
-        }
-        console.error(`Error fetching games for tournament ${tournamentId}:`, error)
-      }
-    }
+    // Fetch all games for the team in a single optimized query
+    // Then filter by selected tournament IDs
+    const allGames = await fetchAllGamesForTeam(teamId, tournamentIds, apiKey)
 
     // Deduplicate by game id (in case of overlaps)
     const uniqueGames = allGames.reduce((acc, game) => {
@@ -223,8 +237,8 @@ export async function POST(request: NextRequest) {
       return dateB - dateA
     })
 
-    // Limit to 20 most recent
-    const limitedGames = uniqueGames.slice(0, 20)
+    // Limit to 50 most recent games
+    const limitedGames = uniqueGames.slice(0, 50)
 
     const responseData: GamesData = {
       games: limitedGames,

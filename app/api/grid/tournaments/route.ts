@@ -3,8 +3,11 @@ import { readJSON, storeJSON } from '../../../storage'
 
 const GRID_API_URL = 'https://api-op.grid.gg/central-data/graphql'
 
-// Storage keys
-const getTournamentsKey = (titleId: string) => `cache/tournaments_${titleId}.json`
+// Storage keys - Valorant data stored in val/ prefix
+const getTournamentsKey = (game: string, titleId: string) => 
+  game === 'valorant' 
+    ? `val/cache/tournaments_${titleId}.json`
+    : `cache/tournaments_${titleId}.json`
 
 interface Tournament {
   id: string
@@ -140,9 +143,9 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // titleId: 3 = League of Legends, 25 = Valorant
-    const titleId = game === 'valorant' ? '25' : '3'
-    const cacheKey = getTournamentsKey(titleId)
+    // titleId: 3 = League of Legends, 6 = Valorant
+    const titleId = game === 'valorant' ? '6' : '3'
+    const cacheKey = getTournamentsKey(game || 'lol', titleId)
 
     // Check for force refresh param
     const forceRefresh = searchParams.get('refresh') === 'true'
@@ -159,14 +162,23 @@ export async function GET(request: NextRequest) {
     // Fetch all tournaments with pagination
     const allTournaments = await fetchAllTournaments(apiKey, titleId)
 
-    // Filter: keep only tournaments with the stage suffix pattern
-    // Tournaments with "(Stage: Stage)" pattern have actual series data
-    // e.g., "LCK - Spring 2024 (Regular Season: Regular Season)" has data
-    // but "LCK - Spring 2024" (parent tournament) doesn't
-    const stagePattern = /\([^)]+:\s*[^)]+\)$/
-    const validTournaments = allTournaments.filter(
-      (t) => stagePattern.test(t.name) && !t.name.includes('2024')
-    )
+    // Filter based on game type
+    let validTournaments: Tournament[]
+    
+    if (game === 'valorant') {
+      // For Valorant, include all tournaments (GRID API has limited Valorant data)
+      // Only VCT Americas and Masters events are available
+      validTournaments = allTournaments
+    } else {
+      // For LoL, keep only tournaments with the stage suffix pattern
+      // Tournaments with "(Stage: Stage)" pattern have actual series data
+      // e.g., "LCK - Spring 2024 (Regular Season: Regular Season)" has data
+      // but "LCK - Spring 2024" (parent tournament) doesn't
+      const stagePattern = /\([^)]+:\s*[^)]+\)$/
+      validTournaments = allTournaments.filter(
+        (t) => stagePattern.test(t.name) && !t.name.includes('2024')
+      )
+    }
 
     const now = new Date()
 

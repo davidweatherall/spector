@@ -6,67 +6,65 @@ import Link from 'next/link'
 import layoutStyles from '../../../components/GamePageLayout.module.css'
 import styles from '../../../lol/series/[seriesId]/SeriesPage.module.css'
 
-// Streamlined types from converter
-interface StreamlinedSeries {
-  teams: StreamlinedTeam[]
-  games: StreamlinedGame[]
+// Valorant streamlined types
+interface ValorantStreamlinedSeries {
+  seriesId: string
+  teams: ValorantTeam[]
+  mapVeto: MapVetoAction[]
+  games: ValorantGame[]
 }
 
-interface StreamlinedTeam {
+interface ValorantTeam {
+  id: string
   name: string
-  id: string
-  players: StreamlinedPlayer[]
+  players: ValorantPlayer[]
 }
 
-interface StreamlinedPlayer {
+interface ValorantPlayer {
+  id: string
   name: string
-  id: string
 }
 
-interface StreamlinedGame {
-  id: string
-  blueSideTeamId: string
+interface MapVetoAction {
+  sequenceNumber: number
+  occurredAt: string
+  action: 'ban' | 'pick' | 'decider'
+  mapId: string
+  teamId: string | null
+  teamName: string | null
+}
+
+interface ValorantGame {
+  gameNumber: number
+  mapId: string
+  startedAt: string | null
   winnerTeamId: string | null
-  gameLength: number
-  startTime: string
-  players: GamePlayerInfo[]
-  draftingActions: DraftingAction[]
-  events: GameEvent[]
+  rounds: ValorantRound[]
 }
 
-interface GamePlayerInfo {
-  id: string
-  name: string
-  champName: string
+interface ValorantRound {
+  roundNumber: number
+  winnerTeamId: string
+  winnerTeamName: string
+  winType: string
+  purchases: RoundPurchase[]
+}
+
+interface RoundPurchase {
+  playerId: string
+  playerName: string
   teamId: string
+  items: string[]
 }
 
-interface DraftingAction {
-  teamId: string
-  champName: string
-  action: 'ban' | 'pick'
-}
-
-interface GameEvent {
-  type: string
-  playerId?: string
-  targetId?: string
-  itemName?: string
-  monsterName?: string
-  towerName?: string
-  inhibitorName?: string
-  newLevel?: number
-  assistPlayerIds?: string[]
-  time: number
-}
-
-export default function SeriesPage() {
+export default function ValorantSeriesPage() {
   const params = useParams()
   const seriesId = params.seriesId as string
   
-  const [seriesData, setSeriesData] = useState<StreamlinedSeries | null>(null)
+  const [seriesData, setSeriesData] = useState<ValorantStreamlinedSeries | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [expandedGames, setExpandedGames] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     async function fetchData() {
@@ -74,7 +72,8 @@ export default function SeriesPage() {
       setError(null)
 
       try {
-        const res = await fetch(`/api/grid/series/${seriesId}/convert`)
+        // Use the Valorant-specific convert endpoint
+        const res = await fetch(`/api/val/series/${seriesId}/convert`)
         
         if (!res.ok) {
           throw new Error('Failed to fetch series data')
@@ -98,205 +97,50 @@ export default function SeriesPage() {
     }
   }, [seriesId])
 
-  // Get team name by ID
-  const getTeamName = (teamId: string): string => {
-    const team = seriesData?.teams.find(t => t.id === teamId)
-    return team?.name || teamId
-  }
-
-  // Get team side for a game
-  const getTeamSide = (game: StreamlinedGame, teamId: string): 'blue' | 'red' => {
-    return game.blueSideTeamId === teamId ? 'blue' : 'red'
-  }
-
-  // Group consecutive draft actions by the same team
-  interface DraftGroup {
-    teamId: string
-    type: 'ban' | 'pick'
-    actions: DraftingAction[]
-  }
-
-  const groupDraftActions = (actions: DraftingAction[]): DraftGroup[] => {
-    if (!actions || actions.length === 0) return []
-
-    const groups: DraftGroup[] = []
-    let currentGroup: DraftGroup | null = null
-
-    for (const action of actions) {
-      if (
-        !currentGroup ||
-        currentGroup.teamId !== action.teamId ||
-        currentGroup.type !== action.action
-      ) {
-        if (currentGroup) {
-          groups.push(currentGroup)
-        }
-        currentGroup = {
-          teamId: action.teamId,
-          type: action.action,
-          actions: [action],
-        }
+  // Toggle game expansion
+  const toggleGame = (gameNumber: number) => {
+    setExpandedGames(prev => {
+      const next = new Set(prev)
+      if (next.has(gameNumber)) {
+        next.delete(gameNumber)
       } else {
-        currentGroup.actions.push(action)
+        next.add(gameNumber)
       }
+      return next
+    })
+  }
+
+  // Get team by ID
+  const getTeam = (teamId: string | null): ValorantTeam | undefined => {
+    if (!teamId) return undefined
+    return seriesData?.teams.find(t => t.id === teamId)
+  }
+
+  // Format map name for display
+  const formatMapName = (mapId: string): string => {
+    return mapId.charAt(0).toUpperCase() + mapId.slice(1)
+  }
+
+  // Get action color class
+  const getActionClass = (action: MapVetoAction['action']): string => {
+    switch (action) {
+      case 'ban': return styles.vetoActionBan
+      case 'pick': return styles.vetoActionPick
+      case 'decider': return styles.vetoActionDecider
+      default: return ''
     }
+  }
 
-    if (currentGroup) {
-      groups.push(currentGroup)
+  // Format win type for display
+  const formatWinType = (winType: string): string => {
+    switch (winType) {
+      case 'opponentEliminated': return 'Elimination'
+      case 'bombExploded': return 'Spike Detonated'
+      case 'bombDefused': return 'Spike Defused'
+      case 'timeExpired': return 'Time Expired'
+      default: return winType
     }
-
-    return groups
   }
-
-  const renderDraftTimeline = (game: StreamlinedGame) => {
-    if (!game.draftingActions || game.draftingActions.length === 0) {
-      return <p style={{ color: 'var(--text-tertiary)' }}>No draft data available</p>
-    }
-
-    const groups = groupDraftActions(game.draftingActions)
-    
-    const blueTeamId = game.blueSideTeamId
-    const redTeamId = seriesData?.teams.find(t => t.id !== blueTeamId)?.id || ''
-
-    let lastType: 'ban' | 'pick' | null = null
-    let lastTeamId: string | null = null
-    let sequenceNumber = 0
-
-    return (
-      <div className={styles.draftTimeline}>
-        {/* Team Headers */}
-        <div className={styles.draftTeamHeaders}>
-          <div className={styles.draftTeamLabel}>
-            <span className={`${styles.draftTeamName} ${styles.blue}`}>
-              {getTeamName(blueTeamId)}
-            </span>
-            <span className={styles.draftTeamSide}>Attackers</span>
-          </div>
-          <div className={`${styles.draftTeamLabel} ${styles.right}`}>
-            <span className={`${styles.draftTeamName} ${styles.red}`}>
-              {getTeamName(redTeamId)}
-            </span>
-            <span className={styles.draftTeamSide}>Defenders</span>
-          </div>
-        </div>
-
-        {/* Horizontal Draft Row */}
-        <div className={styles.draftHorizontalRow}>
-          {groups.map((group, groupIndex) => {
-            const side = getTeamSide(game, group.teamId)
-            const showPhaseDivider = lastType !== null && lastType !== group.type
-            const showGroupSeparator = !showPhaseDivider && lastTeamId !== null && lastTeamId !== group.teamId
-            
-            lastType = group.type
-            lastTeamId = group.teamId
-
-            return (
-              <div key={groupIndex} style={{ display: 'contents' }}>
-                {showPhaseDivider && (
-                  <div className={styles.phaseDivider}>
-                    <div className={styles.phaseDividerLine} />
-                  </div>
-                )}
-                
-                {showGroupSeparator && (
-                  <div className={styles.groupSeparator} />
-                )}
-                
-                {/* Agents - text only for Valorant */}
-                {group.actions.map((action, actionIndex) => {
-                  sequenceNumber++
-                  return (
-                    <div 
-                      key={`${groupIndex}-${actionIndex}`}
-                      className={`${styles.draftChampionHorizontal} ${styles[side]} ${styles[action.action]}`}
-                      style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        width: 'auto',
-                        minWidth: '36px',
-                        padding: '0.25rem 0.5rem',
-                        background: 'rgba(255, 255, 255, 0.05)'
-                      }}
-                    >
-                      <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>
-                        {action.champName}
-                      </span>
-                      <span className={styles.seqBadge}>{sequenceNumber}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
-  const formatGameLength = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
-
-  const renderEvents = (events: GameEvent[]) => {
-    if (!events || events.length === 0) {
-      return <p style={{ color: 'var(--text-tertiary)' }}>No events recorded</p>
-    }
-
-    return (
-      <div className={styles.eventsList}>
-        {events.map((event, index) => {
-          const { time, type, ...eventData } = event
-          const eventJson = Object.keys(eventData).length > 0 
-            ? JSON.stringify(eventData) 
-            : ''
-          
-          return (
-            <div key={index} className={styles.eventRow}>
-              <span className={styles.eventTime}>[{formatTime(time)}]</span>
-              <span className={styles.eventType}>{type}</span>
-              {eventJson && (
-                <span className={styles.eventData}>{eventJson}</span>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    )
-  }
-
-  // Calculate series score
-  const getSeriesScore = () => {
-    if (!seriesData) return { team1: 0, team2: 0 }
-    
-    const team1Id = seriesData.teams[0]?.id
-    const team2Id = seriesData.teams[1]?.id
-    
-    let team1Wins = 0
-    let team2Wins = 0
-    
-    for (const game of seriesData.games) {
-      if (game.winnerTeamId === team1Id) team1Wins++
-      else if (game.winnerTeamId === team2Id) team2Wins++
-    }
-    
-    return { team1: team1Wins, team2: team2Wins }
-  }
-
-  const score = getSeriesScore()
-  const seriesWinner = score.team1 > score.team2 
-    ? seriesData?.teams[0]?.id 
-    : score.team2 > score.team1 
-      ? seriesData?.teams[1]?.id 
-      : null
 
   return (
     <div className={layoutStyles.container}>
@@ -322,7 +166,7 @@ export default function SeriesPage() {
           {loading && (
             <div className={styles.loading}>
               <div className={styles.loadingSpinner} />
-              <span>Fetching and converting data...</span>
+              <span>Fetching and converting Valorant data...</span>
             </div>
           )}
           
@@ -338,80 +182,171 @@ export default function SeriesPage() {
                   {seriesData.teams.map(t => t.name).join(' vs ')}
                 </h2>
                 <div className={styles.seriesMeta}>
-                  <span>Games: {seriesData.games.length}</span>
-                  {seriesData.games[0]?.startTime && (
-                    <span>
-                      {new Date(seriesData.games[0].startTime).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                    </span>
-                  )}
+                  <span>Series ID: {seriesData.seriesId}</span>
+                  <span>Maps: {seriesData.games.length}</span>
                 </div>
               </div>
 
-              {/* Teams Score Summary */}
+              {/* Teams Summary */}
               <div className={styles.teamsSummary}>
-                {seriesData.teams.map((team, index) => {
-                  const isWinner = team.id === seriesWinner
-                  const teamScore = index === 0 ? score.team1 : score.team2
-                  
-                  return (
-                    <div 
-                      key={team.id} 
-                      className={`${styles.teamScore} ${isWinner ? styles.winner : ''}`}
-                    >
-                      <span className={styles.teamName}>{team.name}</span>
-                      <span className={styles.score}>{teamScore}</span>
-                      {isWinner && <span className={styles.winnerBadge}>Winner</span>}
-                    </div>
-                  )
-                }).reduce((prev, curr, i) => 
-                  i === 0 ? [curr] : [...prev, <span key={`div-${i}`} className={styles.scoreDivider}>-</span>, curr], 
+                {seriesData.teams.map((team, index) => (
+                  <div key={team.id} className={styles.teamScore}>
+                    <span className={styles.teamName}>{team.name}</span>
+                    {team.players.length > 0 && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                        ({team.players.map(p => p.name).join(', ')})
+                      </span>
+                    )}
+                  </div>
+                )).reduce((prev, curr, i) => 
+                  i === 0 ? [curr] : [...prev, <span key={`div-${i}`} className={styles.scoreDivider}>vs</span>, curr], 
                   [] as React.ReactNode[]
                 )}
               </div>
 
-              {/* Games */}
+              {/* Map Veto Section */}
+              <div className={styles.gameCard}>
+                <div className={styles.gameHeader}>
+                  <h3 className={styles.gameTitle}>Map Veto</h3>
+                </div>
+                <div className={styles.gameContent}>
+                  <table className={styles.vetoTable}>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Action</th>
+                        <th>Map</th>
+                        <th>Team</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {seriesData.mapVeto.map((action) => (
+                        <tr key={action.sequenceNumber}>
+                          <td className={styles.vetoSequence}>{action.sequenceNumber}</td>
+                          <td>
+                            <span className={`${styles.vetoAction} ${getActionClass(action.action)}`}>
+                              {action.action.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className={styles.vetoMap}>{formatMapName(action.mapId)}</td>
+                          <td className={styles.vetoTeam}>
+                            {action.teamName || <span className={styles.vetoAuto}>Auto</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Games/Maps List */}
               <div className={styles.gamesList}>
-                {seriesData.games.map((game, index) => {
-                  const winnerName = game.winnerTeamId ? getTeamName(game.winnerTeamId) : null
+                {seriesData.games.map((game) => {
+                  const winnerTeam = getTeam(game.winnerTeamId)
+                  const isExpanded = expandedGames.has(game.gameNumber)
                   
                   return (
-                    <div key={game.id} className={styles.gameCard}>
-                      <div className={styles.gameHeader}>
+                    <div key={game.gameNumber} className={styles.gameCard}>
+                      <div 
+                        className={styles.gameHeader} 
+                        onClick={() => toggleGame(game.gameNumber)}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <h3 className={styles.gameTitle}>
-                          Game {index + 1}
+                          Game {game.gameNumber}: {formatMapName(game.mapId)}
+                          <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+                            {isExpanded ? '▼' : '▶'} ({game.rounds?.length || 0} rounds)
+                          </span>
                         </h3>
                         <div className={styles.gameInfo}>
-                          <span className={styles.gameLength}>
-                            {formatGameLength(game.gameLength)}
-                          </span>
-                          {winnerName && (
+                          {winnerTeam && (
                             <span className={styles.gameWinner}>
-                              Winner: {winnerName}
+                              Winner: {winnerTeam.name}
                             </span>
                           )}
                         </div>
                       </div>
-                      <div className={styles.gameContent}>
-                        {renderDraftTimeline(game)}
-                        
-                        {/* Events Section */}
-                        <div className={styles.eventsSection}>
-                          <h4 className={styles.eventsSectionTitle}>Events:</h4>
-                          {renderEvents(game.events)}
+                      
+                      {isExpanded && game.rounds && (
+                        <div className={styles.gameContent}>
+                          <table className={styles.vetoTable}>
+                            <thead>
+                              <tr>
+                                <th>Round</th>
+                                <th>Winner</th>
+                                <th>Win Type</th>
+                                <th>Purchases</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {game.rounds.map((round) => (
+                                <tr key={round.roundNumber}>
+                                  <td style={{ fontWeight: 'bold' }}>{round.roundNumber}</td>
+                                  <td>{round.winnerTeamName}</td>
+                                  <td>
+                                    <span style={{ 
+                                      padding: '2px 6px', 
+                                      borderRadius: '4px',
+                                      fontSize: '0.75rem',
+                                      background: round.winType === 'opponentEliminated' 
+                                        ? 'rgba(239, 68, 68, 0.2)' 
+                                        : round.winType === 'bombExploded'
+                                        ? 'rgba(249, 115, 22, 0.2)'
+                                        : round.winType === 'bombDefused'
+                                        ? 'rgba(34, 197, 94, 0.2)'
+                                        : 'rgba(156, 163, 175, 0.2)'
+                                    }}>
+                                      {formatWinType(round.winType)}
+                                    </span>
+                                  </td>
+                                  <td style={{ fontSize: '0.75rem', maxWidth: '400px' }}>
+                                    {round.purchases.length > 0 ? (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                        {round.purchases.map((purchase, idx) => (
+                                          <div key={idx}>
+                                            <strong>{purchase.playerName}:</strong>{' '}
+                                            {purchase.items.join(', ')}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span style={{ color: 'var(--text-tertiary)' }}>No purchases</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )
                 })}
+              </div>
+
+              {/* Raw Data Debug */}
+              <div className={styles.gameCard} style={{ marginTop: '2rem' }}>
+                <div className={styles.gameHeader}>
+                  <h3 className={styles.gameTitle}>Raw Data (Debug)</h3>
+                </div>
+                <div className={styles.gameContent}>
+                  <pre style={{ 
+                    fontSize: '0.7rem', 
+                    overflow: 'auto', 
+                    maxHeight: '400px',
+                    background: 'rgba(0,0,0,0.3)',
+                    padding: '1rem',
+                    borderRadius: '4px'
+                  }}>
+                    {JSON.stringify(seriesData, null, 2)}
+                  </pre>
+                </div>
               </div>
             </>
           )}
         </div>
       </main>
+
     </div>
   )
 }

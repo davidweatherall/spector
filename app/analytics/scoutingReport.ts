@@ -76,11 +76,30 @@ export interface ScoutingReport {
     avgLeadWhenHeld: number
   } | null
   
+  // Class Win Rate Stats by role
+  classWinRateStats: {
+    top: { className: string; wins: number; games: number; winRate: number }[]
+    jungle: { className: string; wins: number; games: number; winRate: number }[]
+    support: { className: string; wins: number; games: number; winRate: number }[]
+  } | null
+  
   // Ban Phase Analysis
   banPhaseStats: {
     totalGames: number
     firstPickGames: number
     secondPickGames: number
+    // Bans by game number (fearless mode aware)
+    bansByGame: {
+      game1: { champion: string; count: number; percentage: number }[]
+      game2: { champion: string; count: number; percentage: number }[] // % of times banned when available
+      game3: { champion: string; count: number; percentage: number }[] // % of times banned when available
+    }
+    // Second ban phase patterns - "When we pick X, we tend to ban Y"
+    secondBanPhasePatterns: {
+      ifWePick: string
+      weBan: { champion: string; count: number; percentage: number }[]
+      sampleSize: number
+    }[]
     // Bans by position when first pick
     firstPick: {
       priorityBans: { champion: string; count: number; percentage: number }[]
@@ -160,6 +179,7 @@ export function aggregateScoutingReport(
     goldLeadAt15ByRole: null,
     drakeGoldHoldingStats: null,
     comebackStats: null,
+    classWinRateStats: null,
     banPhaseStats: null,
     seriesBreakdown: analyticsResults.map(r => {
       // Get draft data for this series
@@ -408,8 +428,11 @@ export function aggregateScoutingReport(
             // Only include players from our team (by ID)
             if (player.teamId === teamId) {
               foundOurTeam = true
-              if (player.role === 'mid') midGolds.push(player.holdingGoldWhenDrakeDies)
-              if (player.role === 'bot') adcGolds.push(player.holdingGoldWhenDrakeDies)
+              const goldValue = player.holdingGoldWhenDrakeDies
+              if (typeof goldValue === 'number' && !isNaN(goldValue)) {
+                if (player.role === 'mid') midGolds.push(goldValue)
+                if (player.role === 'bot') adcGolds.push(goldValue)
+              }
             }
           }
           if (foundOurTeam) totalDrakes++
@@ -484,6 +507,68 @@ export function aggregateScoutingReport(
     }
   }
   
+  // Aggregate class win rate stats - only for our team
+  const classWinRateData = collectAnalyticsData(analyticsResults, 'classWinRate')
+  console.log(`[scoutingReport] Found ${classWinRateData.length} classWinRate analytics, teamId: ${teamId}`)
+  if (classWinRateData.length > 0) {
+    // Track wins and games by class for each role
+    const roleClassStats: {
+      top: { [className: string]: { wins: number; games: number } }
+      jungle: { [className: string]: { wins: number; games: number } }
+      support: { [className: string]: { wins: number; games: number } }
+    } = {
+      top: {},
+      jungle: {},
+      support: {},
+    }
+    
+    let totalGamesFound = 0
+    let matchingTeamGames = 0
+    for (const data of classWinRateData) {
+      if (data.games) {
+        totalGamesFound += data.games.length
+        for (const game of data.games) {
+          // Only include games for our team
+          if (game.teamId !== teamId) continue
+          matchingTeamGames++
+          
+          const role = game.role as 'top' | 'jungle' | 'support'
+          const classes = game.classes || []
+          
+          for (const className of classes) {
+            if (!roleClassStats[role][className]) {
+              roleClassStats[role][className] = { wins: 0, games: 0 }
+            }
+            roleClassStats[role][className].games++
+            if (game.won) {
+              roleClassStats[role][className].wins++
+            }
+          }
+        }
+      }
+    }
+    console.log(`[scoutingReport] classWinRate: totalGamesFound=${totalGamesFound}, matchingTeamGames=${matchingTeamGames}`)
+    
+    // Convert to sorted arrays
+    const convertToArray = (stats: { [className: string]: { wins: number; games: number } }) => {
+      return Object.entries(stats)
+        .filter(([_, s]) => s.games >= 2) // Need at least 2 games
+        .map(([className, s]) => ({
+          className,
+          wins: s.wins,
+          games: s.games,
+          winRate: (s.wins / s.games) * 100,
+        }))
+        .sort((a, b) => b.games - a.games) // Sort by games played
+    }
+    
+    report.classWinRateStats = {
+      top: convertToArray(roleClassStats.top),
+      jungle: convertToArray(roleClassStats.jungle),
+      support: convertToArray(roleClassStats.support),
+    }
+  }
+  
   // Aggregate ban phase stats - only for our team
   const banPhaseData = collectAnalyticsData(analyticsResults, 'banPhaseAnalysis')
   if (banPhaseData.length > 0) {
@@ -505,6 +590,19 @@ export function aggregateScoutingReport(
     let firstPickGames = 0
     let secondPickGames = 0
     
+    // Track bans by game number (fearless mode)
+    // For game 1: just track bans
+    // For games 2-3: track bans along with what was unavailable (for % calculation)
+    const game1Bans: string[] = []
+    const game2Bans: { ban: string; unavailable: string[] }[] = []
+    const game3Bans: { ban: string; unavailable: string[] }[] = []
+    let game1Count = 0
+    let game2Count = 0
+    let game3Count = 0
+    
+    // Track second ban phase patterns - when we pick X, enemy bans Y
+    const secondBanPhaseReactions: { [ourPick: string]: string[] } = {}
+    
     // First pass: collect all unique champions we've ever picked and all game sequences
     const allFpSequences: any[] = []
     const allSpSequences: any[] = []
@@ -518,6 +616,34 @@ export function aggregateScoutingReport(
           totalGames += ourTeamData.totalGames
           
           for (const seq of ourTeamData.banSequences || []) {
+            // Track bans by game number (fearless mode)
+            const gameNum = seq.gameNumber || 1
+            const unavailable = seq.unavailableChamps || []
+            if (gameNum === 1) {
+              game1Count++
+              game1Bans.push(...seq.ourBans)
+            } else if (gameNum === 2) {
+              game2Count++
+              for (const ban of seq.ourBans) {
+                game2Bans.push({ ban, unavailable })
+              }
+            } else if (gameNum >= 3) {
+              game3Count++
+              for (const ban of seq.ourBans) {
+                game3Bans.push({ ban, unavailable })
+              }
+            }
+            
+            // Track second ban phase patterns - when we pick X, we tend to ban Y
+            if (seq.ourPicksBeforeSecondBan && seq.ourSecondPhaseBans && seq.ourSecondPhaseBans.length > 0) {
+              for (const ourPick of seq.ourPicksBeforeSecondBan) {
+                if (!secondBanPhaseReactions[ourPick]) {
+                  secondBanPhaseReactions[ourPick] = []
+                }
+                secondBanPhaseReactions[ourPick].push(...seq.ourSecondPhaseBans)
+              }
+            }
+            
             if (seq.isFirstPick) {
               firstPickGames++
               allFpSequences.push(seq)
@@ -559,17 +685,20 @@ export function aggregateScoutingReport(
               }
               
               // Track adaptive picks - when enemy picks X, we respond with our 2 picks
-              // Also track what was banned in this game
+              // Also track what was banned/unavailable in this game (including fearless mode)
               if (seq.enemyFirstPick && seq.ourFirstPicks && seq.ourFirstPicks.length > 0) {
                 if (!spAdaptivePicks[seq.enemyFirstPick]) {
                   spAdaptivePicks[seq.enemyFirstPick] = []
                 }
                 const allBans = seq.allBans || [...(seq.ourBans || []), ...(seq.enemyBans || [])]
+                // Include unavailable champs from previous games (fearless mode)
+                const unavailableFromFearless = seq.unavailableChamps || []
+                const allUnavailable = [...allBans, ...unavailableFromFearless]
                 // Only take first 2 picks (the immediate response)
                 const firstTwoPicks = seq.ourFirstPicks.slice(0, 2)
                 spAdaptivePicks[seq.enemyFirstPick].push({
                   picks: firstTwoPicks,
-                  bans: allBans,
+                  bans: allUnavailable, // includes bans + fearless unavailable
                 })
               }
             }
@@ -714,10 +843,119 @@ export function aggregateScoutingReport(
         .slice(0, 10) // Top 10
     }
     
+    // Calculate bans by game with availability awareness
+    // Game 1: simple frequency (all champs available)
+    const calcGame1Bans = () => {
+      if (game1Count === 0) return []
+      const counts: { [champ: string]: number } = {}
+      for (const ban of game1Bans) {
+        counts[ban] = (counts[ban] || 0) + 1
+      }
+      return Object.entries(counts)
+        .map(([champion, count]) => ({
+          champion,
+          count,
+          percentage: (count / game1Count) * 100, // % of game 1s we banned this
+        }))
+        .sort((a, b) => b.percentage - a.percentage)
+        .slice(0, 10)
+    }
+    
+    // Game 2+: % of times banned when available (not picked in previous games)
+    const calcGameNBans = (bans: { ban: string; unavailable: string[] }[], gameCount: number) => {
+      if (gameCount === 0) return []
+      
+      // For each champion, track: times banned AND times available
+      const champStats: { [champ: string]: { banned: number; available: number } } = {}
+      
+      // Get all unique champions that were ever banned in this game slot
+      const bannedChamps = new Set(bans.map(b => b.ban))
+      
+      // For each banned champion, check availability in each game
+      for (const champ of bannedChamps) {
+        champStats[champ] = { banned: 0, available: 0 }
+      }
+      
+      // Group bans by game instance (every 3 bans = 1 game)
+      // Actually, we store each ban separately with its unavailable list
+      // We need to track unique games
+      const gameInstances: { unavailable: Set<string> }[] = []
+      let currentUnavailable: string[] | null = null
+      
+      for (const banEntry of bans) {
+        // Detect new game by checking if unavailable list changed
+        const unavailableKey = banEntry.unavailable.sort().join(',')
+        if (currentUnavailable === null || currentUnavailable !== unavailableKey) {
+          gameInstances.push({ unavailable: new Set(banEntry.unavailable) })
+          currentUnavailable = unavailableKey
+        }
+        
+        // Count this ban
+        champStats[banEntry.ban].banned++
+      }
+      
+      // For each champion, count how many games it was available
+      for (const champ of bannedChamps) {
+        for (const game of gameInstances) {
+          if (!game.unavailable.has(champ)) {
+            champStats[champ].available++
+          }
+        }
+      }
+      
+      return Object.entries(champStats)
+        .filter(([_, stats]) => stats.available > 0) // Only show champs that were available at least once
+        .map(([champion, stats]) => ({
+          champion,
+          count: stats.banned,
+          percentage: (stats.banned / stats.available) * 100, // % of times banned when available
+        }))
+        .sort((a, b) => b.percentage - a.percentage)
+        .slice(0, 10)
+    }
+    
+    // Calculate second ban phase patterns - "When we pick X, we tend to ban Y"
+    const calcSecondBanPhasePatterns = () => {
+      return Object.entries(secondBanPhaseReactions)
+        .filter(([_, bans]) => bans.length >= 2) // Need at least 2 samples
+        .map(([ourPick, ourBans]) => {
+          // Count frequency of each ban we make
+          const banCounts: { [champ: string]: number } = {}
+          for (const ban of ourBans) {
+            banCounts[ban] = (banCounts[ban] || 0) + 1
+          }
+          
+          // Calculate sample size (number of games where we picked this champ)
+          // Each game contributes 2 bans, so divide by 2
+          const sampleSize = Math.floor(ourBans.length / 2)
+          
+          return {
+            ifWePick: ourPick,
+            weBan: Object.entries(banCounts)
+              .map(([champion, count]) => ({
+                champion,
+                count,
+                percentage: (count / sampleSize) * 100, // % of games with this pick that we banned this
+              }))
+              .sort((a, b) => b.percentage - a.percentage)
+              .slice(0, 5), // Top 5 bans
+            sampleSize,
+          }
+        })
+        .sort((a, b) => b.sampleSize - a.sampleSize)
+        .slice(0, 15) // Top 15 picks by sample size
+    }
+    
     report.banPhaseStats = {
       totalGames,
       firstPickGames,
       secondPickGames,
+      bansByGame: {
+        game1: calcGame1Bans(),
+        game2: calcGameNBans(game2Bans, game2Count),
+        game3: calcGameNBans(game3Bans, game3Count),
+      },
+      secondBanPhasePatterns: calcSecondBanPhasePatterns(),
       firstPick: {
         priorityBans: calcFreq(firstPickBans.all, firstPickGames),
         ban1: calcFreq(firstPickBans.ban1, firstPickBans.ban1.length),

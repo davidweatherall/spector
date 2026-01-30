@@ -4,12 +4,15 @@ import { AnalyticsResult } from './types'
 interface BanSequence {
   gameNumber: number
   isFirstPick: boolean
-  ourBans: string[] // Our 3 bans in order
-  enemyBans: string[] // Enemy 3 bans in order (interleaved with ours)
+  ourBans: string[] // Our 3 bans in order (first ban phase)
+  enemyBans: string[] // Enemy 3 bans in order (first ban phase)
   ourFirstPicks: string[] // Our first pick(s) - 1 if first pick, 2 if second pick
   allBans: string[] // All 6 bans from first ban phase
   enemyFirstPick: string | null // Enemy's first pick (only relevant if we're second pick)
   unavailableChamps: string[] // Champs picked in previous games (not available)
+  // Second ban phase data
+  ourPicksBeforeSecondBan: string[] // Our 3 picks before second ban phase
+  ourSecondPhaseBans: string[] // Our 2 bans in second ban phase (what we ban based on our picks)
 }
 
 interface BanFrequency {
@@ -126,6 +129,46 @@ function extractOurFirstPicks(
 }
 
 /**
+ * Extract second ban phase data
+ * Second ban phase happens after first 6 picks (3 per team)
+ * Each team bans 2 more champions
+ */
+function extractSecondBanPhase(
+  draftingActions: DraftingAction[],
+  ourTeamId: string
+): { ourPicksBeforeSecondBan: string[]; ourSecondPhaseBans: string[] } {
+  const picks = draftingActions.filter(a => a.action === 'pick')
+  const bans = draftingActions.filter(a => a.action === 'ban')
+  
+  // Our first 3 picks (before second ban phase)
+  const ourPicksBeforeSecondBan: string[] = []
+  let ourPickCount = 0
+  for (const pick of picks) {
+    if (pick.teamId === ourTeamId) {
+      ourPickCount++
+      if (ourPickCount <= 3) {
+        ourPicksBeforeSecondBan.push(pick.champName)
+      }
+    }
+  }
+  
+  // OUR second ban phase bans (bans 4-5, which are indices 3-4 in our ban list)
+  const ourSecondPhaseBans: string[] = []
+  let ourBanCount = 0
+  for (const ban of bans) {
+    if (ban.teamId === ourTeamId) {
+      ourBanCount++
+      // Our 4th and 5th bans
+      if (ourBanCount === 4 || ourBanCount === 5) {
+        ourSecondPhaseBans.push(ban.champName)
+      }
+    }
+  }
+  
+  return { ourPicksBeforeSecondBan, ourSecondPhaseBans }
+}
+
+/**
  * Calculate frequency statistics from a list of champions
  */
 function calculateFrequencies(champs: string[], total: number): BanFrequency[] {
@@ -183,6 +226,12 @@ function analyzeGameBans(
     isFirstPick
   )
   
+  // Extract second ban phase data
+  const { ourPicksBeforeSecondBan, ourSecondPhaseBans } = extractSecondBanPhase(
+    game.draftingActions,
+    ourTeamId
+  )
+  
   return {
     gameNumber,
     isFirstPick,
@@ -192,6 +241,8 @@ function analyzeGameBans(
     allBans,
     enemyFirstPick,
     unavailableChamps: previousPicks,
+    ourPicksBeforeSecondBan,
+    ourSecondPhaseBans,
   }
 }
 

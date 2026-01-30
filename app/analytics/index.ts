@@ -12,6 +12,7 @@ import { drakeGoldHolding } from './drakeGoldHolding'
 import { comebackStats } from './comebackStats'
 import { draftAnalysis } from './draftAnalysis'
 import { banPhaseAnalysis } from './banPhaseAnalysis'
+import { analyzeClassWinRate } from './classWinRate'
 
 /**
  * All analytics functions to run
@@ -27,6 +28,7 @@ const analyticsFunctions: AnalyticsFunction[] = [
   comebackStats,
   draftAnalysis,
   banPhaseAnalysis,
+  analyzeClassWinRate,
   // Add more analytics functions here as they are created
 ]
 

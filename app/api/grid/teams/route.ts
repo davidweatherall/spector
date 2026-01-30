@@ -3,8 +3,11 @@ import { readJSON, storeJSON } from '../../../storage'
 
 const GRID_API_URL = 'https://api-op.grid.gg/central-data/graphql'
 
-// Storage key generators
-const getTeamsKey = (tournamentId: string) => `cache/teams_tournament_${tournamentId}.json`
+// Storage key generators - Valorant data stored in val/ prefix
+const getTeamsKey = (game: string, tournamentId: string) => 
+  game === 'valorant'
+    ? `val/cache/teams_tournament_${tournamentId}.json`
+    : `cache/teams_tournament_${tournamentId}.json`
 
 interface Team {
   id: string
@@ -46,9 +49,10 @@ interface SeriesResponse {
 // Fetch teams for a single tournament (with blob storage caching)
 async function fetchTeamsFromTournament(
   apiKey: string,
-  tournamentId: string
+  tournamentId: string,
+  game: string = 'lol'
 ): Promise<Team[]> {
-  const cacheKey = getTeamsKey(tournamentId)
+  const cacheKey = getTeamsKey(game, tournamentId)
   
   // Check blob storage cache first
   const cached = await readJSON<Team[]>(cacheKey)
@@ -145,7 +149,7 @@ async function fetchTeamsFromTournament(
 
 export async function POST(request: NextRequest) {
   try {
-    const { tournamentIds } = await request.json()
+    const { tournamentIds, game = 'lol' } = await request.json()
 
     if (!tournamentIds || !Array.isArray(tournamentIds) || tournamentIds.length === 0) {
       return NextResponse.json(
@@ -171,7 +175,7 @@ export async function POST(request: NextRequest) {
     
     for (const id of limitedTournamentIds) {
       try {
-        const teams = await fetchTeamsFromTournament(apiKey, id)
+        const teams = await fetchTeamsFromTournament(apiKey, id, game)
         allTeams.push(...teams)
         
         // Add delay between tournament fetches

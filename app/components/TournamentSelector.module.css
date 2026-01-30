@@ -359,6 +359,35 @@
   opacity: 0.7;
 }
 
+.gamesErrorContainer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gamesErrorText {
+  font-size: 0.75rem;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.retryButton {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  color: #ef4444;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retryButton:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
 .teamActionsButtons {
   display: flex;
   gap: 0.5rem;
@@ -795,6 +824,7 @@
 
 .scoutingCardWide {
   grid-column: span 2;
+  margin-top: 1.5rem;
 }
 
 .scoutingStatRow {
@@ -893,6 +923,7 @@
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-primary);
+  margin-left: 0.5rem;
 }
 
 .scoutingStatPositive {
@@ -1008,7 +1039,124 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
   padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Game Performance Stats Section */
+.gameStatsSection {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.gameStatsSectionHeader {
   margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.gameStatsSectionTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* Game Stats 2-Column Grid */
+.gameStatsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.gameStatsColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Class Win Rate Section */
+.classWinRateSection {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.classWinRateGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.classWinRateColumn {
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.classWinRateHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.classWinRateTitle {
+  flex: 1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.classWinRateColumnHeader {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  min-width: 44px;
+  text-align: right;
+}
+
+.classWinRateList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.classWinRateItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.classWinRateName {
+  flex: 1;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+
+.classWinRateGames {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  min-width: 44px;
+  text-align: right;
+}
+
+.classWinRatePercent {
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-width: 44px;
+  text-align: right;
+}
+
+.classWinRatePositive {
+  color: #22c55e;
+}
+
+.classWinRateNegative {
+  color: #ef4444;
 }
 
 .pickBanHeader {
@@ -1031,6 +1179,161 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+/* Bans by Game Section */
+.bansByGameSection {
+  margin-bottom: 1.5rem;
+}
+
+.bansByGameGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.bansByGameColumn {
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.bansByGameHeader {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.bansByGameSubheader {
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.bansByGameList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.bansByGameItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bansByGameItem img {
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.bansByGameName {
+  flex: 1;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bansByGamePercent {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 32px;
+  text-align: right;
+}
+
+.noDataText {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.pickSideToggleSection {
+  margin-bottom: 1rem;
+}
+
+/* Second Ban Phase Patterns */
+.secondBanPhaseSection {
+  margin-bottom: 1.5rem;
+}
+
+.secondBanPhaseGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.secondBanPhaseCard {
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.secondBanPhaseTrigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.secondBanPhaseLabel {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+}
+
+.secondBanPhaseTrigger img {
+  border-radius: 4px;
+  border: 1px solid rgba(59, 130, 246, 0.5);
+}
+
+.secondBanPhaseName {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.secondBanPhaseSample {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+}
+
+.secondBanPhaseResponses {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.secondBanPhaseResponse {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.secondBanPhaseResponse img {
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.secondBanPhaseResponseName {
+  flex: 1;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.secondBanPhasePercent {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #ef4444;
 }
 
 /* Ban Phase Analysis Styles */

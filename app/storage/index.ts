@@ -23,29 +23,41 @@ export const storeValue = async (key: string, value: string): Promise<string> =>
 /**
  * Read a value from Vercel Blob Storage
  * @param key - The key/path to read from
+ * @param retries - Number of retries for eventual consistency (default 2)
  * @returns The stored value as a string, or null if not found
  */
-export const readValue = async (key: string): Promise<string | null> => {
-  try {
-    // List blobs with the prefix to find the exact key
-    const { blobs } = await list({ 
-      prefix: key,
-      token: vercelBlobReadWriteToken 
-    });
-    
-    // Find exact match
-    const blob = blobs.find(b => b.pathname === key);
-    if (!blob) return null;
-    
-    // Fetch the content
-    const response = await fetch(blob.url);
-    if (!response.ok) return null;
-    
-    return await response.text();
-  } catch (error) {
-    console.error(`Error reading blob ${key}:`, error);
-    return null;
+export const readValue = async (key: string, retries: number = 2): Promise<string | null> => {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // List blobs with the prefix to find the exact key
+      const { blobs } = await list({ 
+        prefix: key,
+        token: vercelBlobReadWriteToken 
+      });
+      
+      // Find exact match
+      const blob = blobs.find(b => b.pathname === key);
+      if (blob) {
+        // Fetch the content
+        const response = await fetch(blob.url);
+        if (response.ok) {
+          return await response.text();
+        }
+      }
+      
+      // If not found and we have retries left, wait a bit for eventual consistency
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } catch (error) {
+      console.error(`Error reading blob ${key} (attempt ${attempt + 1}):`, error);
+      if (attempt === retries) {
+        return null;
+      }
+    }
   }
+  
+  return null;
 }
 
 /**

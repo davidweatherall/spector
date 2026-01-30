@@ -75,7 +75,11 @@ export async function runAllAnalytics(
  */
 export async function getAnalytics(seriesId: string): Promise<AnalyticsOutput | null> {
   const analyticsKey = getAnalyticsKey(seriesId)
-  return await readJSON<AnalyticsOutput>(analyticsKey)
+  const result = await readJSON<AnalyticsOutput>(analyticsKey)
+  if (!result) {
+    console.log(`getAnalytics: No data found for key ${analyticsKey}`)
+  }
+  return result
 }
 
 /**

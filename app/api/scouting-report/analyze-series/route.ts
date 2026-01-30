@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAnalytics } from '../../../analytics'
+import { getAnalytics, runAllAnalytics } from '../../../analytics'
+import { readJSON } from '../../../storage'
+import { StreamlinedSeries } from '../../../utils/seriesConverter'
 
 /**
  * POST - Analyze a single series (trigger conversion if needed)
@@ -30,8 +32,28 @@ export async function POST(request: NextRequest) {
         )
       }
       
-      // Now get the analytics that were generated
-      analytics = await getAnalytics(seriesId)
+      const convertResult = await convertResponse.json()
+      
+      // If convert returned cached data, analytics might not exist
+      // The convert endpoint only runs analytics on fresh conversions
+      if (convertResult.cached) {
+        // Check if analytics exist now
+        analytics = await getAnalytics(seriesId)
+        
+        // If still no analytics but we have converted data, run analytics
+        if (!analytics) {
+          const convertedKey = `converted/series_${seriesId}.json`
+          const convertedData = await readJSON<StreamlinedSeries>(convertedKey)
+          
+          if (convertedData) {
+            console.log(`Running analytics for cached conversion: ${seriesId}`)
+            analytics = await runAllAnalytics(seriesId, convertedData)
+          }
+        }
+      } else {
+        // Fresh conversion - analytics should have been generated
+        analytics = await getAnalytics(seriesId)
+      }
     }
     
     return NextResponse.json({

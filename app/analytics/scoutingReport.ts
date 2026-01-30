@@ -79,28 +79,44 @@ export interface ScoutingReport {
   // Ban Phase Analysis
   banPhaseStats: {
     totalGames: number
-    // Most common first bans overall
-    mostCommonFirstBans: { champion: string; count: number; percentage: number }[]
-    // Priority bans (high frequency across all positions)
-    priorityBans: { champion: string; count: number; percentage: number }[]
+    firstPickGames: number
+    secondPickGames: number
     // Bans by position when first pick
-    firstPickBans: {
+    firstPick: {
+      priorityBans: { champion: string; count: number; percentage: number }[]
       ban1: { champion: string; count: number; percentage: number }[]
       ban2: { champion: string; count: number; percentage: number }[]
       ban3: { champion: string; count: number; percentage: number }[]
+      adaptiveBans: {
+        ifEnemyBans: string
+        thenWeBan: { champion: string; count: number; percentage: number }[]
+        sampleSize: number
+      }[]
+      // First pick = 1 champion picked first (% = pick rate when available)
+      firstPicks: { champion: string; count: number; available: number; percentage: number }[]
     }
     // Bans by position when second pick
-    secondPickBans: {
+    secondPick: {
+      priorityBans: { champion: string; count: number; percentage: number }[]
       ban1: { champion: string; count: number; percentage: number }[]
       ban2: { champion: string; count: number; percentage: number }[]
       ban3: { champion: string; count: number; percentage: number }[]
+      adaptiveBans: {
+        ifEnemyBans: string
+        thenWeBan: { champion: string; count: number; percentage: number }[]
+        sampleSize: number
+      }[]
+      // Second pick = 2 champions picked (% = pick rate when available)
+      firstPicks: { champion: string; count: number; available: number; percentage: number }[]
+      // Track common pick pairs (first two picks together)
+      pickPairs: { pair: string[]; count: number; percentage: number }[]
+      // Adaptive picks - when enemy first picks X, we respond with Y
+      adaptivePicks: {
+        ifEnemyPicks: string
+        thenWePick: { champion: string; count: number; percentage: number; banRate: number }[]
+        sampleSize: number
+      }[]
     }
-    // Adaptive banning - reactions to enemy bans
-    adaptiveBans: {
-      ifEnemyBans: string
-      thenWeBan: { champion: string; count: number; percentage: number }[]
-      sampleSize: number
-    }[]
   } | null
   
   // Per-series breakdown with draft info
@@ -471,49 +487,136 @@ export function aggregateScoutingReport(
   // Aggregate ban phase stats - only for our team
   const banPhaseData = collectAnalyticsData(analyticsResults, 'banPhaseAnalysis')
   if (banPhaseData.length > 0) {
-    // Collect all ban data from series where our team was analyzed
-    const allFirstBans: string[] = []
-    const allBans: string[] = []
-    const firstPickBan1: string[] = []
-    const firstPickBan2: string[] = []
-    const firstPickBan3: string[] = []
-    const secondPickBan1: string[] = []
-    const secondPickBan2: string[] = []
-    const secondPickBan3: string[] = []
-    const adaptiveReactions: { [enemyBan: string]: string[] } = {}
+    // Collect all ban and pick data from series where our team was analyzed
+    // Separate by first pick vs second pick
+    const firstPickBans: { all: string[]; ban1: string[]; ban2: string[]; ban3: string[] } = { all: [], ban1: [], ban2: [], ban3: [] }
+    const secondPickBans: { all: string[]; ban1: string[]; ban2: string[]; ban3: string[] } = { all: [], ban1: [], ban2: [], ban3: [] }
+    const firstPickAdaptive: { [enemyBan: string]: string[] } = {}
+    const secondPickAdaptive: { [enemyBan: string]: string[] } = {}
+    // First picks tracking - now track availability and picks for "pick rate when available"
+    // For FP: available = not banned (6 bans), not picked previously
+    // For SP: available = not banned (6 bans), not picked by enemy first, not picked previously
+    const fpChampAvailability: { [champ: string]: { available: number; picked: number } } = {}
+    const spChampAvailability: { [champ: string]: { available: number; picked: number } } = {}
+    const spPickPairs: string[][] = [] // When second pick, the pair of picks together
+    // Track adaptive picks with ban info: when enemy picks X, what do we pick and what was banned
+    const spAdaptivePicks: { [enemyPick: string]: { picks: string[]; bans: string[] }[] } = {} // Each entry has our 2 picks and all bans
     let totalGames = 0
+    let firstPickGames = 0
+    let secondPickGames = 0
+    
+    // First pass: collect all unique champions we've ever picked and all game sequences
+    const allFpSequences: any[] = []
+    const allSpSequences: any[] = []
+    const fpPickedChamps = new Set<string>()
+    const spPickedChamps = new Set<string>()
     
     for (const data of banPhaseData) {
       if (data.teams) {
-        // Find our team's data
         const ourTeamData = data.teams.find((t: any) => t.teamId === teamId)
         if (ourTeamData) {
           totalGames += ourTeamData.totalGames
           
-          // Collect ban sequences
           for (const seq of ourTeamData.banSequences || []) {
-            if (seq.ourBans[0]) allFirstBans.push(seq.ourBans[0])
-            allBans.push(...seq.ourBans)
-            
             if (seq.isFirstPick) {
-              if (seq.ourBans[0]) firstPickBan1.push(seq.ourBans[0])
-              if (seq.ourBans[1]) firstPickBan2.push(seq.ourBans[1])
-              if (seq.ourBans[2]) firstPickBan3.push(seq.ourBans[2])
-              // Track adaptive reactions (when FP, we react to enemy ban1 with our ban2)
+              firstPickGames++
+              allFpSequences.push(seq)
+              if (seq.ourFirstPicks?.[0]) {
+                fpPickedChamps.add(seq.ourFirstPicks[0])
+              }
+              
+              // Collect ban data
+              firstPickBans.all.push(...seq.ourBans)
+              if (seq.ourBans[0]) firstPickBans.ban1.push(seq.ourBans[0])
+              if (seq.ourBans[1]) firstPickBans.ban2.push(seq.ourBans[1])
+              if (seq.ourBans[2]) firstPickBans.ban3.push(seq.ourBans[2])
               if (seq.enemyBans[0] && seq.ourBans[1]) {
-                if (!adaptiveReactions[seq.enemyBans[0]]) adaptiveReactions[seq.enemyBans[0]] = []
-                adaptiveReactions[seq.enemyBans[0]].push(seq.ourBans[1])
+                if (!firstPickAdaptive[seq.enemyBans[0]]) firstPickAdaptive[seq.enemyBans[0]] = []
+                firstPickAdaptive[seq.enemyBans[0]].push(seq.ourBans[1])
               }
             } else {
-              if (seq.ourBans[0]) secondPickBan1.push(seq.ourBans[0])
-              if (seq.ourBans[1]) secondPickBan2.push(seq.ourBans[1])
-              if (seq.ourBans[2]) secondPickBan3.push(seq.ourBans[2])
-              // Track adaptive reactions (when SP, we react to enemy ban1 with our ban1)
+              secondPickGames++
+              allSpSequences.push(seq)
+              if (seq.ourFirstPicks) {
+                for (const champ of seq.ourFirstPicks) {
+                  spPickedChamps.add(champ)
+                }
+              }
+              
+              // Collect ban data
+              secondPickBans.all.push(...seq.ourBans)
+              if (seq.ourBans[0]) secondPickBans.ban1.push(seq.ourBans[0])
+              if (seq.ourBans[1]) secondPickBans.ban2.push(seq.ourBans[1])
+              if (seq.ourBans[2]) secondPickBans.ban3.push(seq.ourBans[2])
               if (seq.enemyBans[0] && seq.ourBans[0]) {
-                if (!adaptiveReactions[seq.enemyBans[0]]) adaptiveReactions[seq.enemyBans[0]] = []
-                adaptiveReactions[seq.enemyBans[0]].push(seq.ourBans[0])
+                if (!secondPickAdaptive[seq.enemyBans[0]]) secondPickAdaptive[seq.enemyBans[0]] = []
+                secondPickAdaptive[seq.enemyBans[0]].push(seq.ourBans[0])
+              }
+              
+              if (seq.ourFirstPicks && seq.ourFirstPicks.length >= 2) {
+                const sortedPair = [...seq.ourFirstPicks].sort()
+                spPickPairs.push(sortedPair)
+              }
+              
+              // Track adaptive picks - when enemy picks X, we respond with our 2 picks
+              // Also track what was banned in this game
+              if (seq.enemyFirstPick && seq.ourFirstPicks && seq.ourFirstPicks.length > 0) {
+                if (!spAdaptivePicks[seq.enemyFirstPick]) {
+                  spAdaptivePicks[seq.enemyFirstPick] = []
+                }
+                const allBans = seq.allBans || [...(seq.ourBans || []), ...(seq.enemyBans || [])]
+                // Only take first 2 picks (the immediate response)
+                const firstTwoPicks = seq.ourFirstPicks.slice(0, 2)
+                spAdaptivePicks[seq.enemyFirstPick].push({
+                  picks: firstTwoPicks,
+                  bans: allBans,
+                })
               }
             }
+          }
+        }
+      }
+    }
+    
+    // Second pass: for each champion we've picked, track availability across ALL games
+    // First Pick availability
+    for (const champ of fpPickedChamps) {
+      fpChampAvailability[champ] = { available: 0, picked: 0 }
+      
+      for (const seq of allFpSequences) {
+        const allBans = seq.allBans || [...(seq.ourBans || []), ...(seq.enemyBans || [])]
+        const unavailablePrevious = seq.unavailableChamps || []
+        const unavailableSet = new Set([...allBans, ...unavailablePrevious])
+        
+        // Check if this champ was available in this game
+        if (!unavailableSet.has(champ)) {
+          fpChampAvailability[champ].available++
+          
+          // Check if we picked it
+          if (seq.ourFirstPicks?.[0] === champ) {
+            fpChampAvailability[champ].picked++
+          }
+        }
+      }
+    }
+    
+    // Second Pick availability
+    for (const champ of spPickedChamps) {
+      spChampAvailability[champ] = { available: 0, picked: 0 }
+      
+      for (const seq of allSpSequences) {
+        const allBans = seq.allBans || [...(seq.ourBans || []), ...(seq.enemyBans || [])]
+        const unavailablePrevious = seq.unavailableChamps || []
+        const enemyFirstPick = seq.enemyFirstPick
+        const unavailableSet = new Set([...allBans, ...unavailablePrevious, ...(enemyFirstPick ? [enemyFirstPick] : [])])
+        
+        // Check if this champ was available in this game
+        if (!unavailableSet.has(champ)) {
+          spChampAvailability[champ].available++
+          
+          // Check if we picked it
+          if (seq.ourFirstPicks?.includes(champ)) {
+            spChampAvailability[champ].picked++
           }
         }
       }
@@ -529,32 +632,110 @@ export function aggregateScoutingReport(
         .slice(0, 10) // Top 10
     }
     
-    // Calculate adaptive bans
-    const adaptiveBans = Object.entries(adaptiveReactions)
-      .filter(([_, reactions]) => reactions.length >= 2)
-      .map(([enemyBan, reactions]) => ({
-        ifEnemyBans: enemyBan,
-        thenWeBan: calcFreq(reactions, reactions.length).slice(0, 5),
-        sampleSize: reactions.length,
-      }))
-      .sort((a, b) => b.sampleSize - a.sampleSize)
-      .slice(0, 10)
+    // Calculate adaptive bans helper
+    const calcAdaptive = (reactions: { [enemyBan: string]: string[] }) => {
+      return Object.entries(reactions)
+        .filter(([_, r]) => r.length >= 2)
+        .map(([enemyBan, r]) => ({
+          ifEnemyBans: enemyBan,
+          thenWeBan: calcFreq(r, r.length).slice(0, 5),
+          sampleSize: r.length,
+        }))
+        .sort((a, b) => b.sampleSize - a.sampleSize)
+        .slice(0, 10)
+    }
+    
+    // Calculate pick pair frequencies
+    const calcPairFreq = (pairs: string[][], total: number) => {
+      const counts: { [key: string]: { pair: string[]; count: number } } = {}
+      for (const pair of pairs) {
+        const key = pair.join('|')
+        if (!counts[key]) counts[key] = { pair, count: 0 }
+        counts[key].count++
+      }
+      return Object.values(counts)
+        .map(({ pair, count }) => ({ pair, count, percentage: total > 0 ? (count / total) * 100 : 0 }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10) // Top 10 pairs
+    }
+    
+    // Calculate adaptive picks (when enemy picks X, we respond with Y) with ban rates
+    const calcAdaptivePicks = (reactions: { [enemyPick: string]: { picks: string[]; bans: string[] }[] }) => {
+      return Object.entries(reactions)
+        .filter(([_, games]) => games.length >= 2) // Need at least 2 games
+        .map(([enemyPick, games]) => {
+          // Collect all picks and count ban occurrences
+          const pickCounts: { [champ: string]: number } = {}
+          const banCounts: { [champ: string]: number } = {}
+          const totalGames = games.length
+          
+          for (const game of games) {
+            // Count picks
+            for (const pick of game.picks) {
+              pickCounts[pick] = (pickCounts[pick] || 0) + 1
+            }
+            // Count how often each champ was banned
+            for (const ban of game.bans) {
+              banCounts[ban] = (banCounts[ban] || 0) + 1
+            }
+          }
+          
+          // Build response with pick % and ban %
+          const thenWePick = Object.entries(pickCounts)
+            .map(([champion, count]) => ({
+              champion,
+              count,
+              percentage: (count / totalGames) * 100, // % of games we picked this champ
+              banRate: ((banCounts[champion] || 0) / totalGames) * 100, // % of games this champ was banned
+            }))
+            .sort((a, b) => b.percentage - a.percentage)
+            .slice(0, 5)
+          
+          return {
+            ifEnemyPicks: enemyPick,
+            thenWePick,
+            sampleSize: totalGames,
+          }
+        })
+        .sort((a, b) => b.sampleSize - a.sampleSize)
+        .slice(0, 10)
+    }
+    
+    // Calculate pick rate when available (picked / available * 100)
+    const calcPickRateWhenAvailable = (availability: { [champ: string]: { available: number; picked: number } }) => {
+      return Object.entries(availability)
+        .map(([champion, stats]) => ({
+          champion,
+          count: stats.picked,
+          available: stats.available,
+          percentage: stats.available > 0 ? (stats.picked / stats.available) * 100 : 0,
+        }))
+        .sort((a, b) => b.percentage - a.percentage) // Sort by pick rate % (highest first)
+        .slice(0, 10) // Top 10
+    }
     
     report.banPhaseStats = {
       totalGames,
-      mostCommonFirstBans: calcFreq(allFirstBans, totalGames),
-      priorityBans: calcFreq(allBans, totalGames),
-      firstPickBans: {
-        ban1: calcFreq(firstPickBan1, firstPickBan1.length),
-        ban2: calcFreq(firstPickBan2, firstPickBan2.length),
-        ban3: calcFreq(firstPickBan3, firstPickBan3.length),
+      firstPickGames,
+      secondPickGames,
+      firstPick: {
+        priorityBans: calcFreq(firstPickBans.all, firstPickGames),
+        ban1: calcFreq(firstPickBans.ban1, firstPickBans.ban1.length),
+        ban2: calcFreq(firstPickBans.ban2, firstPickBans.ban2.length),
+        ban3: calcFreq(firstPickBans.ban3, firstPickBans.ban3.length),
+        adaptiveBans: calcAdaptive(firstPickAdaptive),
+        firstPicks: calcPickRateWhenAvailable(fpChampAvailability),
       },
-      secondPickBans: {
-        ban1: calcFreq(secondPickBan1, secondPickBan1.length),
-        ban2: calcFreq(secondPickBan2, secondPickBan2.length),
-        ban3: calcFreq(secondPickBan3, secondPickBan3.length),
+      secondPick: {
+        priorityBans: calcFreq(secondPickBans.all, secondPickGames),
+        ban1: calcFreq(secondPickBans.ban1, secondPickBans.ban1.length),
+        ban2: calcFreq(secondPickBans.ban2, secondPickBans.ban2.length),
+        ban3: calcFreq(secondPickBans.ban3, secondPickBans.ban3.length),
+        adaptiveBans: calcAdaptive(secondPickAdaptive),
+        firstPicks: calcPickRateWhenAvailable(spChampAvailability),
+        pickPairs: calcPairFreq(spPickPairs, secondPickGames),
+        adaptivePicks: calcAdaptivePicks(spAdaptivePicks),
       },
-      adaptiveBans,
     }
   }
   

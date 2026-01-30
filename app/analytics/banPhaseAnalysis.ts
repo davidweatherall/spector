@@ -6,6 +6,9 @@ interface BanSequence {
   isFirstPick: boolean
   ourBans: string[] // Our 3 bans in order
   enemyBans: string[] // Enemy 3 bans in order (interleaved with ours)
+  ourFirstPicks: string[] // Our first pick(s) - 1 if first pick, 2 if second pick
+  allBans: string[] // All 6 bans from first ban phase
+  enemyFirstPick: string | null // Enemy's first pick (only relevant if we're second pick)
   unavailableChamps: string[] // Champs picked in previous games (not available)
 }
 
@@ -85,6 +88,44 @@ function extractFirstBanPhase(
 }
 
 /**
+ * Extract our first pick(s) after ban phase
+ * Draft order after bans: FP picks 1, SP picks 2, FP picks 2, SP picks 2, FP picks 1
+ * So first pick team gets 1 pick first, second pick team gets 2 picks
+ */
+function extractOurFirstPicks(
+  draftingActions: DraftingAction[],
+  ourTeamId: string,
+  isFirstPick: boolean
+): { ourFirstPicks: string[]; enemyFirstPick: string | null } {
+  const picks = draftingActions.filter(a => a.action === 'pick')
+  const ourFirstPicks: string[] = []
+  let enemyFirstPick: string | null = null
+  
+  if (isFirstPick) {
+    // First pick team picks 1 champion first
+    // The first pick in the draft goes to FP team
+    if (picks.length > 0 && picks[0].teamId === ourTeamId) {
+      ourFirstPicks.push(picks[0].champName)
+    }
+    // No enemy pick before ours when we're first pick
+  } else {
+    // Second pick team picks 2 champions after FP's first pick
+    // Pick 1 (0-indexed: 0) goes to enemy (FP team)
+    if (picks.length > 0 && picks[0].teamId !== ourTeamId) {
+      enemyFirstPick = picks[0].champName
+    }
+    // Picks 2 and 3 (0-indexed: 1 and 2) go to SP team (us)
+    for (let i = 1; i <= 2 && i < picks.length; i++) {
+      if (picks[i].teamId === ourTeamId) {
+        ourFirstPicks.push(picks[i].champName)
+      }
+    }
+  }
+  
+  return { ourFirstPicks, enemyFirstPick }
+}
+
+/**
  * Calculate frequency statistics from a list of champions
  */
 function calculateFrequencies(champs: string[], total: number): BanFrequency[] {
@@ -104,7 +145,7 @@ function calculateFrequencies(champs: string[], total: number): BanFrequency[] {
 }
 
 /**
- * Analyze a single game's ban phase
+ * Analyze a single game's ban phase and first picks
  */
 function analyzeGameBans(
   game: StreamlinedGame,
@@ -132,11 +173,24 @@ function analyzeGameBans(
     return null
   }
   
+  // All 6 bans from first ban phase
+  const allBans = [...ourBans, ...enemyBans]
+  
+  // Extract our first pick(s) and enemy's first pick
+  const { ourFirstPicks, enemyFirstPick } = extractOurFirstPicks(
+    game.draftingActions,
+    ourTeamId,
+    isFirstPick
+  )
+  
   return {
     gameNumber,
     isFirstPick,
     ourBans,
     enemyBans,
+    ourFirstPicks,
+    allBans,
+    enemyFirstPick,
     unavailableChamps: previousPicks,
   }
 }

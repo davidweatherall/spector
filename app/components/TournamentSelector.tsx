@@ -38,7 +38,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const [scoutingError, setScoutingError] = useState<string | null>(null)
   const [selectedGoldLeadRole, setSelectedGoldLeadRole] = useState<'top' | 'jungle' | 'mid' | 'bot' | 'support'>('mid')
   const [selectedCounterPickTab, setSelectedCounterPickTab] = useState<'top-cp' | 'top-cpd' | 'mid-cp' | 'mid-cpd'>('mid-cp')
-  const [selectedBanPhaseTab, setSelectedBanPhaseTab] = useState<'fp1' | 'fp2' | 'fp3' | 'sp1' | 'sp2' | 'sp3'>('fp1')
+  const [selectedBanPhasePickSide, setSelectedBanPhasePickSide] = useState<'first' | 'second'>('first')
+  const [selectedBanPosition, setSelectedBanPosition] = useState<1 | 2 | 3>(1)
   
   const {
     lolData,
@@ -124,10 +125,23 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
       setSelectedTeam(team)
       setScoutingReport(null)
     }
+    // Reset analyzing state when switching teams
+    setCompletedSeriesIds(new Set())
+    setCurrentAnalyzingId(null)
   }
+
+  // Auto-fetch games when team selection changes
+  useEffect(() => {
+    if (selectedTeam) {
+      fetchGames()
+    }
+  }, [selectedTeam?.id])
 
   const handleGenerateScoutingReport = async () => {
     if (!selectedTeam || games.length === 0) return
+    
+    // Close filters panel when generating report
+    setIsExpanded(false)
     
     setScoutingLoading(true)
     setScoutingError(null)
@@ -389,159 +403,26 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
         )}
       </div>
 
-      {/* Games Panel */}
+      {/* Team Actions Panel - CTA for scouting report */}
       {selectedTeam && (
-        <div className={styles.gamesPanel}>
-          <button 
-            className={styles.gamesPanelHeader}
-            onClick={() => setIsGamesExpanded(!isGamesExpanded)}
-          >
-            <h3 className={styles.gamesPanelTitle}>
-              {selectedTeam.name}
-              {games.length > 0 && (
-                <span className={styles.gamesCount}>{games.length} Games</span>
-              )}
-            </h3>
-            <div className={styles.headerButtons}>
-              <button
-                className={`${styles.fetchGamesButton} ${accentClass}`}
-                onClick={(e) => { e.stopPropagation(); fetchGames(); }}
-                disabled={gamesLoading}
-              >
-                {gamesLoading ? 'Loading...' : games.length > 0 ? 'Refetch Games' : 'Fetch Games'}
-              </button>
-              {games.length > 0 && (
-                <button
-                  className={`${styles.scoutingButton} ${scoutingLoading ? styles.scoutingButtonLoading : ''}`}
-                  onClick={(e) => { e.stopPropagation(); handleGenerateScoutingReport(); }}
-                  disabled={scoutingLoading}
-                >
-                  {scoutingLoading ? 'Generating...' : 'Generate Scouting Report'}
-                </button>
-              )}
-            </div>
-            <svg 
-              className={`${styles.chevron} ${isGamesExpanded ? styles.chevronExpanded : ''}`}
-              width="16" 
-              height="16" 
-              viewBox="0 0 16 16" 
-              fill="none"
+        <div className={styles.teamActionsPanel}>
+          <div className={styles.teamActionsHeader}>
+            <h3 className={styles.teamActionsTitle}>{selectedTeam.name}</h3>
+            {gamesLoading ? (
+              <span className={styles.gamesLoadingText}>Loading games...</span>
+            ) : games.length > 0 ? (
+              <span className={styles.gamesCount}>{games.length} Games Found</span>
+            ) : null}
+          </div>
+          <div className={styles.teamActionsButtons}>
+            <button
+              className={`${styles.scoutingButton} ${scoutingLoading ? styles.scoutingButtonLoading : ''}`}
+              onClick={handleGenerateScoutingReport}
+              disabled={scoutingLoading || games.length === 0}
             >
-              <path 
-                d="M4 6L8 10L12 6" 
-                stroke="currentColor" 
-                strokeWidth="1.5" 
-                strokeLinecap="round" 
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-          
-          {isGamesExpanded && (
-            <>
-              {gamesLoading ? (
-                <div className={styles.gamesLoading}>Loading games...</div>
-              ) : gamesError ? (
-                <div className={styles.error}>{gamesError}</div>
-              ) : games.length === 0 ? (
-                <div className={styles.placeholder}>Click "Fetch Games" to load</div>
-              ) : (
-                <div className={styles.gamesList}>
-                  {games.map((gameItem) => {
-                    const isAnalyzing = currentAnalyzingId === gameItem.id
-                    const isCompleted = completedSeriesIds.has(gameItem.id)
-                    
-                    // Get draft data from scouting report if available
-                    const seriesDraftData = scoutingReport?.seriesBreakdown?.find(
-                      (s: any) => s.seriesId === gameItem.id
-                    )
-                    
-                    return (
-                      <div key={gameItem.id} className={styles.gameRowContainer}>
-                        <Link 
-                          href={`/${game === 'lol' ? 'lol' : 'val'}/series/${gameItem.id}`}
-                          className={`${styles.gameRow} ${isAnalyzing ? styles.gameRowAnalyzing : ''} ${isCompleted ? styles.gameRowCompleted : ''}`}
-                        >
-                          <div className={styles.gameDate}>{formatDate(gameItem.date)}</div>
-                          <div className={styles.gameMatchup}>
-                            <span className={styles.gameTeam}>{selectedTeam.name}</span>
-                            <span className={styles.gameVs}>vs</span>
-                            <span className={styles.gameOpponent}>{gameItem.opponent.name}</span>
-                          </div>
-                          <div className={styles.gameTournament}>
-                            {isAnalyzing && <span className={styles.analyzingBadge}>Analysing...</span>}
-                            {isCompleted && !isAnalyzing && <span className={styles.completedBadge}>✓</span>}
-                            {!isAnalyzing && !isCompleted && gameItem.tournament}
-                          </div>
-                        </Link>
-                        
-                        {/* Draft info for each game in this series */}
-                        {seriesDraftData?.games && seriesDraftData.games.length > 0 && (
-                          <div className={styles.draftContainer}>
-                            {seriesDraftData.games.map((gameDraft: any) => {
-                              // Group consecutive actions by same team and type
-                              const groups: { teamId: string; type: string; actions: any[]; isOurTeam: boolean }[] = []
-                              let currentGroup: any = null
-                              
-                              for (const action of gameDraft.draftActions || []) {
-                                if (!currentGroup || currentGroup.teamId !== action.teamId || currentGroup.type !== action.action) {
-                                  if (currentGroup) groups.push(currentGroup)
-                                  currentGroup = { teamId: action.teamId, type: action.action, actions: [action], isOurTeam: action.isOurTeam }
-                                } else {
-                                  currentGroup.actions.push(action)
-                                }
-                              }
-                              if (currentGroup) groups.push(currentGroup)
-                              
-                              let lastType: string | null = null
-                              
-                              return (
-                                <div key={gameDraft.gameNumber} className={styles.draftRow}>
-                                  <div className={styles.draftGameLabel}>
-                                    Game {gameDraft.gameNumber}
-                                    <span className={gameDraft.isFirstPick ? styles.firstPick : styles.secondPick}>
-                                      {gameDraft.isFirstPick ? 'First Pick' : 'Second Pick'}
-                                    </span>
-                                  </div>
-                                  <div className={styles.draftHorizontalRow}>
-                                    {groups.map((group, groupIndex) => {
-                                      const showPhaseDivider = lastType !== null && lastType !== group.type
-                                      lastType = group.type
-                                      
-                                      return (
-                                        <div key={groupIndex} className={styles.draftGroup}>
-                                          {showPhaseDivider && <div className={styles.phaseDivider} />}
-                                          {group.actions.map((action: any, actionIndex: number) => (
-                                            <div 
-                                              key={actionIndex}
-                                              className={`${styles.draftChampion} ${group.isOurTeam ? styles.ourTeam : styles.enemyTeam} ${action.action === 'ban' ? styles.ban : styles.pick}`}
-                                            >
-                                              <Image
-                                                src={getChampionImagePath(action.champName)}
-                                                alt={action.champName}
-                                                width={28}
-                                                height={28}
-                                                unoptimized
-                                              />
-                                              <span className={styles.championTooltip}>{action.champName}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          )}
+              {scoutingLoading ? 'Generating...' : 'Generate Scouting Report'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -583,6 +464,242 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
               </span>
             </h3>
           </div>
+          
+          {/* Pick Ban Analysis - Full Width at Top */}
+          {scoutingReport.banPhaseStats && (
+            <div className={styles.pickBanAnalysis}>
+              <div className={styles.pickBanHeader}>
+                <h4 className={styles.pickBanTitle}>Pick Ban Analysis</h4>
+                <div className={styles.pickSideToggle}>
+                  <button
+                    className={`${styles.pickSideButton} ${selectedBanPhasePickSide === 'first' ? styles.pickSideButtonActive : ''}`}
+                    onClick={() => setSelectedBanPhasePickSide('first')}
+                  >
+                    First Pick ({scoutingReport.banPhaseStats.firstPickGames} games)
+                  </button>
+                  <button
+                    className={`${styles.pickSideButton} ${selectedBanPhasePickSide === 'second' ? styles.pickSideButtonActive : ''}`}
+                    onClick={() => setSelectedBanPhasePickSide('second')}
+                  >
+                    Second Pick ({scoutingReport.banPhaseStats.secondPickGames} games)
+                  </button>
+                </div>
+              </div>
+              
+              {(() => {
+                const pickData = selectedBanPhasePickSide === 'first' 
+                  ? scoutingReport.banPhaseStats!.firstPick 
+                  : scoutingReport.banPhaseStats!.secondPick
+                const banKey = `ban${selectedBanPosition}` as 'ban1' | 'ban2' | 'ban3'
+                
+                return (
+                  <div className={styles.pickBanContent}>
+                    {/* Priority Bans Summary */}
+                    <div className={styles.banPrioritySection}>
+                      <div className={styles.banSectionLabel}>Priority Bans</div>
+                      <div className={styles.banChampList}>
+                        {pickData.priorityBans.slice(0, 6).map((ban: any) => (
+                          <div key={ban.champion} className={styles.banChampItem}>
+                            <Image
+                              src={getChampionImagePath(ban.champion)}
+                              alt={ban.champion}
+                              width={32}
+                              height={32}
+                              unoptimized
+                            />
+                            <span className={styles.banChampPercent}>{Math.round(ban.percentage)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* Ban Position Tabs */}
+                    <div className={styles.banPhaseTabs}>
+                      <div className={styles.banPhaseTabGroup}>
+                        {([1, 2, 3] as const).map((num) => (
+                          <button
+                            key={num}
+                            className={`${styles.banPhaseTab} ${selectedBanPosition === num ? styles.banPhaseTabActive : ''}`}
+                            onClick={() => setSelectedBanPosition(num)}
+                          >
+                            Ban {num}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* Ban Position Details */}
+                    <div className={styles.banPositionDetails}>
+                      <div className={styles.banSectionLabel}>
+                        {selectedBanPhasePickSide === 'first' ? 'First Pick' : 'Second Pick'} - Ban #{selectedBanPosition}
+                      </div>
+                      <div className={styles.banChampGrid}>
+                        {pickData[banKey].slice(0, 8).map((ban: any) => (
+                          <div key={ban.champion} className={styles.banChampCard}>
+                            <Image
+                              src={getChampionImagePath(ban.champion)}
+                              alt={ban.champion}
+                              width={40}
+                              height={40}
+                              unoptimized
+                            />
+                            <div className={styles.banChampInfo}>
+                              <span className={styles.banChampName}>{ban.champion}</span>
+                              <span className={styles.banChampStats}>
+                                {ban.count} ({Math.round(ban.percentage)}%)
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* Adaptive Bans */}
+                    {pickData.adaptiveBans.length > 0 && (
+                      <div className={styles.adaptiveBansSection}>
+                        <div className={styles.banSectionLabel}>Adaptive Banning</div>
+                        <div className={styles.adaptiveBansList}>
+                          {pickData.adaptiveBans.slice(0, 5).map((adaptive: any) => (
+                            <div key={adaptive.ifEnemyBans} className={styles.adaptiveBanRow}>
+                              <div className={styles.adaptiveBanTrigger}>
+                                <span className={styles.adaptiveBanLabel}>If enemy bans</span>
+                                <Image
+                                  src={getChampionImagePath(adaptive.ifEnemyBans)}
+                                  alt={adaptive.ifEnemyBans}
+                                  width={28}
+                                  height={28}
+                                  unoptimized
+                                />
+                              </div>
+                              <span className={styles.adaptiveBanArrow}>→</span>
+                              <div className={styles.adaptiveBanResponses}>
+                                {adaptive.thenWeBan.slice(0, 3).map((response: any) => (
+                                  <div key={response.champion} className={styles.adaptiveBanResponse}>
+                                    <Image
+                                      src={getChampionImagePath(response.champion)}
+                                      alt={response.champion}
+                                      width={24}
+                                      height={24}
+                                      unoptimized
+                                    />
+                                    <span className={styles.adaptiveBanPercent}>{Math.round(response.percentage)}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <span className={styles.adaptiveBanSample}>({adaptive.sampleSize})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* First Picks Section */}
+                    {pickData.firstPicks && pickData.firstPicks.length > 0 && (
+                      <div className={styles.firstPicksSection}>
+                        <div className={styles.banSectionLabel}>
+                          Pick Rate When Available
+                        </div>
+                        <div className={styles.firstPicksGrid}>
+                          {pickData.firstPicks.slice(0, 8).map((pick: any) => (
+                            <div key={pick.champion} className={styles.firstPickCard}>
+                              <Image
+                                src={getChampionImagePath(pick.champion)}
+                                alt={pick.champion}
+                                width={44}
+                                height={44}
+                                unoptimized
+                              />
+                              <div className={styles.firstPickInfo}>
+                                <span className={styles.firstPickName}>{pick.champion}</span>
+                                <span className={styles.firstPickStats}>
+                                  {Math.round(pick.percentage)}% ({pick.count}/{pick.available || pick.count})
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Pick Pairs - only for second pick */}
+                        {selectedBanPhasePickSide === 'second' && pickData.pickPairs && pickData.pickPairs.length > 0 && (
+                          <div className={styles.pickPairsSection}>
+                            <div className={styles.banSectionLabel}>Common Pick Pairs</div>
+                            <div className={styles.pickPairsList}>
+                              {pickData.pickPairs.slice(0, 5).map((pairData: any, idx: number) => (
+                                <div key={idx} className={styles.pickPairRow}>
+                                  <div className={styles.pickPairChamps}>
+                                    {pairData.pair.map((champ: string) => (
+                                      <Image
+                                        key={champ}
+                                        src={getChampionImagePath(champ)}
+                                        alt={champ}
+                                        width={32}
+                                        height={32}
+                                        unoptimized
+                                      />
+                                    ))}
+                                  </div>
+                                  <span className={styles.pickPairNames}>
+                                    {pairData.pair.join(' + ')}
+                                  </span>
+                                  <span className={styles.pickPairStats}>
+                                    {pairData.count} ({Math.round(pairData.percentage)}%)
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Adaptive Picks - only for second pick */}
+                        {selectedBanPhasePickSide === 'second' && pickData.adaptivePicks && pickData.adaptivePicks.length > 0 && (
+                          <div className={styles.adaptiveBansSection}>
+                            <div className={styles.banSectionLabel}>Adaptive Picking (response to enemy first pick)</div>
+                            <div className={styles.adaptiveBansList}>
+                              {pickData.adaptivePicks.slice(0, 5).map((adaptive: any) => (
+                                <div key={adaptive.ifEnemyPicks} className={styles.adaptiveBanRow}>
+                                  <div className={styles.adaptiveBanTrigger}>
+                                    <span className={styles.adaptiveBanLabel}>If enemy picks</span>
+                                    <Image
+                                      src={getChampionImagePath(adaptive.ifEnemyPicks)}
+                                      alt={adaptive.ifEnemyPicks}
+                                      width={28}
+                                      height={28}
+                                      unoptimized
+                                    />
+                                  </div>
+                                  <span className={styles.adaptiveBanArrow}>→</span>
+                                  <div className={styles.adaptiveBanResponses}>
+                                    {adaptive.thenWePick.slice(0, 3).map((response: any) => (
+                                      <div key={response.champion} className={styles.adaptivePickResponse}>
+                                        <Image
+                                          src={getChampionImagePath(response.champion)}
+                                          alt={response.champion}
+                                          width={24}
+                                          height={24}
+                                          unoptimized
+                                        />
+                                        <div className={styles.adaptivePickStats}>
+                                          <span className={styles.adaptivePickPercent}>{Math.round(response.percentage)}%</span>
+                                          {response.banRate > 0 && (
+                                            <span className={styles.adaptiveBanRate}>{Math.round(response.banRate)}% banned</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <span className={styles.adaptiveBanSample}>({adaptive.sampleSize})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
           
           <div className={styles.scoutingContent}>
             {/* Comeback Stats */}
@@ -1027,137 +1144,136 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                 })()}
               </div>
             )}
-            
-            {/* Ban Phase Analysis */}
-            {scoutingReport.banPhaseStats && (
-              <div className={`${styles.scoutingCard} ${styles.scoutingCardWide}`}>
-                <div className={styles.scoutingCardTitle}>First Ban Phase Analysis ({scoutingReport.banPhaseStats.totalGames} games)</div>
-                
-                {/* Priority Bans Summary */}
-                <div className={styles.banPrioritySection}>
-                  <div className={styles.banSectionLabel}>Priority Bans (most banned overall)</div>
-                  <div className={styles.banChampList}>
-                    {scoutingReport.banPhaseStats.priorityBans.slice(0, 6).map((ban: any, idx: number) => (
-                      <div key={ban.champion} className={styles.banChampItem}>
-                        <Image
-                          src={getChampionImagePath(ban.champion)}
-                          alt={ban.champion}
-                          width={32}
-                          height={32}
-                          unoptimized
-                        />
-                        <span className={styles.banChampPercent}>{Math.round(ban.percentage)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Ban Position Tabs */}
-                <div className={styles.banPhaseTabs}>
-                  <div className={styles.banPhaseTabGroup}>
-                    <span className={styles.banPhaseTabGroupLabel}>First Pick:</span>
-                    {(['fp1', 'fp2', 'fp3'] as const).map((tab, idx) => (
-                      <button
-                        key={tab}
-                        className={`${styles.banPhaseTab} ${selectedBanPhaseTab === tab ? styles.banPhaseTabActive : ''}`}
-                        onClick={() => setSelectedBanPhaseTab(tab)}
-                      >
-                        Ban {idx + 1}
-                      </button>
-                    ))}
-                  </div>
-                  <div className={styles.banPhaseTabGroup}>
-                    <span className={styles.banPhaseTabGroupLabel}>Second Pick:</span>
-                    {(['sp1', 'sp2', 'sp3'] as const).map((tab, idx) => (
-                      <button
-                        key={tab}
-                        className={`${styles.banPhaseTab} ${selectedBanPhaseTab === tab ? styles.banPhaseTabActive : ''}`}
-                        onClick={() => setSelectedBanPhaseTab(tab)}
-                      >
-                        Ban {idx + 1}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Ban Position Details */}
-                {(() => {
-                  const isFirstPick = selectedBanPhaseTab.startsWith('fp')
-                  const banNum = parseInt(selectedBanPhaseTab.slice(2)) as 1 | 2 | 3
-                  const banKey = `ban${banNum}` as 'ban1' | 'ban2' | 'ban3'
-                  const bans = isFirstPick 
-                    ? scoutingReport.banPhaseStats!.firstPickBans[banKey]
-                    : scoutingReport.banPhaseStats!.secondPickBans[banKey]
-                  
-                  return (
-                    <div className={styles.banPositionDetails}>
-                      <div className={styles.banSectionLabel}>
-                        {isFirstPick ? 'First Pick' : 'Second Pick'} - Ban #{banNum}
-                      </div>
-                      <div className={styles.banChampGrid}>
-                        {bans.slice(0, 8).map((ban: any) => (
-                          <div key={ban.champion} className={styles.banChampCard}>
-                            <Image
-                              src={getChampionImagePath(ban.champion)}
-                              alt={ban.champion}
-                              width={40}
-                              height={40}
-                              unoptimized
-                            />
-                            <div className={styles.banChampInfo}>
-                              <span className={styles.banChampName}>{ban.champion}</span>
-                              <span className={styles.banChampStats}>
-                                {ban.count} ({Math.round(ban.percentage)}%)
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })()}
-                
-                {/* Adaptive Bans */}
-                {scoutingReport.banPhaseStats.adaptiveBans.length > 0 && (
-                  <div className={styles.adaptiveBansSection}>
-                    <div className={styles.banSectionLabel}>Adaptive Banning (reactions to enemy bans)</div>
-                    <div className={styles.adaptiveBansList}>
-                      {scoutingReport.banPhaseStats.adaptiveBans.slice(0, 5).map((adaptive: any) => (
-                        <div key={adaptive.ifEnemyBans} className={styles.adaptiveBanRow}>
-                          <div className={styles.adaptiveBanTrigger}>
-                            <span className={styles.adaptiveBanLabel}>If enemy bans</span>
-                            <Image
-                              src={getChampionImagePath(adaptive.ifEnemyBans)}
-                              alt={adaptive.ifEnemyBans}
-                              width={28}
-                              height={28}
-                              unoptimized
-                            />
-                          </div>
-                          <span className={styles.adaptiveBanArrow}>→</span>
-                          <div className={styles.adaptiveBanResponses}>
-                            {adaptive.thenWeBan.slice(0, 3).map((response: any) => (
-                              <div key={response.champion} className={styles.adaptiveBanResponse}>
-                                <Image
-                                  src={getChampionImagePath(response.champion)}
-                                  alt={response.champion}
-                                  width={24}
-                                  height={24}
-                                  unoptimized
-                                />
-                                <span className={styles.adaptiveBanPercent}>{Math.round(response.percentage)}%</span>
-                              </div>
-                            ))}
-                          </div>
-                          <span className={styles.adaptiveBanSample}>({adaptive.sampleSize})</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
+        </div>
+      )}
+
+      {/* Games List Panel - Below Scouting Report */}
+      {selectedTeam && games.length > 0 && (
+        <div className={styles.gamesPanel}>
+          <button 
+            className={styles.gamesPanelHeader}
+            onClick={() => setIsGamesExpanded(!isGamesExpanded)}
+          >
+            <h3 className={styles.gamesPanelTitle}>
+              Match History
+              <span className={styles.gamesCount}>{games.length} Games</span>
+            </h3>
+            <svg 
+              className={`${styles.chevron} ${isGamesExpanded ? styles.chevronExpanded : ''}`}
+              width="16" 
+              height="16" 
+              viewBox="0 0 16 16" 
+              fill="none"
+            >
+              <path 
+                d="M4 6L8 10L12 6" 
+                stroke="currentColor" 
+                strokeWidth="1.5" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          
+          {isGamesExpanded && (
+            <div className={styles.gamesList}>
+              {games.map((gameItem) => {
+                const isAnalyzing = currentAnalyzingId === gameItem.id
+                const isCompleted = completedSeriesIds.has(gameItem.id)
+                
+                // Get draft data from scouting report if available
+                const seriesDraftData = scoutingReport?.seriesBreakdown?.find(
+                  (s: any) => s.seriesId === gameItem.id
+                )
+                
+                return (
+                  <div key={gameItem.id} className={styles.gameRowContainer}>
+                    <div className={`${styles.gameRow} ${isAnalyzing ? styles.gameRowAnalyzing : ''} ${isCompleted ? styles.gameRowCompleted : ''}`}>
+                      <div className={styles.gameDate}>{formatDate(gameItem.date)}</div>
+                      <div className={styles.gameMatchup}>
+                        <span className={styles.gameTeam}>{selectedTeam.name}</span>
+                        <span className={styles.gameVs}>vs</span>
+                        <span className={styles.gameOpponent}>{gameItem.opponent.name}</span>
+                      </div>
+                      <div className={styles.gameTournament}>
+                        {isAnalyzing && <span className={styles.analyzingBadge}>Analysing...</span>}
+                        {isCompleted && !isAnalyzing && <span className={styles.completedBadge}>✓</span>}
+                        {!isAnalyzing && !isCompleted && gameItem.tournament}
+                      </div>
+                      <Link 
+                        href={`/${game === 'lol' ? 'lol' : 'val'}/series/${gameItem.id}`}
+                        className={styles.viewMatchButton}
+                      >
+                        View Match
+                      </Link>
+                    </div>
+                    
+                    {/* Draft info for each game in this series */}
+                    {seriesDraftData?.games && seriesDraftData.games.length > 0 && (
+                      <div className={styles.draftContainer}>
+                        {seriesDraftData.games.map((gameDraft: any) => {
+                          // Group consecutive actions by same team and type
+                          const groups: { teamId: string; type: string; actions: any[]; isOurTeam: boolean }[] = []
+                          let currentGroup: any = null
+                          
+                          for (const action of gameDraft.draftActions || []) {
+                            if (!currentGroup || currentGroup.teamId !== action.teamId || currentGroup.type !== action.action) {
+                              if (currentGroup) groups.push(currentGroup)
+                              currentGroup = { teamId: action.teamId, type: action.action, actions: [action], isOurTeam: action.isOurTeam }
+                            } else {
+                              currentGroup.actions.push(action)
+                            }
+                          }
+                          if (currentGroup) groups.push(currentGroup)
+                          
+                          let lastType: string | null = null
+                          
+                          return (
+                            <div key={gameDraft.gameNumber} className={styles.draftRow}>
+                              <div className={styles.draftGameLabel}>
+                                Game {gameDraft.gameNumber}
+                                <span className={gameDraft.isFirstPick ? styles.firstPick : styles.secondPick}>
+                                  {gameDraft.isFirstPick ? 'First Pick' : 'Second Pick'}
+                                </span>
+                              </div>
+                              <div className={styles.draftHorizontalRow}>
+                                {groups.map((group, groupIndex) => {
+                                  const showPhaseDivider = lastType !== null && lastType !== group.type
+                                  lastType = group.type
+                                  
+                                  return (
+                                    <div key={groupIndex} className={styles.draftGroup}>
+                                      {showPhaseDivider && <div className={styles.phaseDivider} />}
+                                      {group.actions.map((action: any, actionIndex: number) => (
+                                        <div 
+                                          key={actionIndex}
+                                          className={`${styles.draftChampion} ${group.isOurTeam ? styles.ourTeam : styles.enemyTeam} ${action.action === 'ban' ? styles.ban : styles.pick}`}
+                                        >
+                                          <Image
+                                            src={getChampionImagePath(action.champName)}
+                                            alt={action.champName}
+                                            width={28}
+                                            height={28}
+                                            unoptimized
+                                          />
+                                          <span className={styles.championTooltip}>{action.champName}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

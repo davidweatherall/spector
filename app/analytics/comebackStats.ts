@@ -11,8 +11,11 @@ interface TeamGoldAt15 {
 
 interface GameComebackData {
   gameId: string
+  blueTeamId: string
   blueTeamName: string
+  redTeamId: string
   redTeamName: string
+  winnerTeamId: string
   winnerTeamName: string
   
   // Gold state at 15 minutes
@@ -21,7 +24,9 @@ interface GameComebackData {
   goldDifferenceAt15: number // positive = blue ahead, negative = red ahead
   
   // Which team was ahead at 15
+  teamAheadAt15Id: string
   teamAheadAt15: string
+  teamBehindAt15Id: string
   teamBehindAt15: string
   leadAmount: number // absolute value of gold lead
   
@@ -120,20 +125,26 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): GameComeb
   
   // Determine who was ahead (consider < 500 gold diff as "even")
   const EVEN_THRESHOLD = 500
+  let teamAheadAt15Id: string
   let teamAheadAt15: string
+  let teamBehindAt15Id: string
   let teamBehindAt15: string
   let leadAmount: number
   let outcome: 'comeback' | 'lead_held' | 'even_at_15'
   
   if (Math.abs(goldDifferenceAt15) < EVEN_THRESHOLD) {
     // Game was essentially even at 15
+    teamAheadAt15Id = ''
     teamAheadAt15 = 'Even'
+    teamBehindAt15Id = ''
     teamBehindAt15 = 'Even'
     leadAmount = 0
     outcome = 'even_at_15'
   } else if (goldDifferenceAt15 > 0) {
     // Blue was ahead
+    teamAheadAt15Id = blueTeamId
     teamAheadAt15 = blueTeamName
+    teamBehindAt15Id = redTeamId
     teamBehindAt15 = redTeamName
     leadAmount = goldDifferenceAt15
     
@@ -144,7 +155,9 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): GameComeb
     }
   } else {
     // Red was ahead
+    teamAheadAt15Id = redTeamId
     teamAheadAt15 = redTeamName
+    teamBehindAt15Id = blueTeamId
     teamBehindAt15 = blueTeamName
     leadAmount = Math.abs(goldDifferenceAt15)
     
@@ -160,13 +173,18 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): GameComeb
   
   return {
     gameId: game.id,
+    blueTeamId,
     blueTeamName,
+    redTeamId,
     redTeamName,
+    winnerTeamId: game.winnerTeamId,
     winnerTeamName,
     blueTeamWorthAt15,
     redTeamWorthAt15,
     goldDifferenceAt15,
+    teamAheadAt15Id,
     teamAheadAt15,
+    teamBehindAt15Id,
     teamBehindAt15,
     leadAmount,
     comebackOccurred,

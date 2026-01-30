@@ -10,6 +10,8 @@ import { adcJoinedGrubs } from './adcJoinedGrubs'
 import { playerWorthAt15 } from './playerWorthAt15'
 import { drakeGoldHolding } from './drakeGoldHolding'
 import { comebackStats } from './comebackStats'
+import { draftAnalysis } from './draftAnalysis'
+import { banPhaseAnalysis } from './banPhaseAnalysis'
 
 /**
  * All analytics functions to run
@@ -23,6 +25,8 @@ const analyticsFunctions: AnalyticsFunction[] = [
   playerWorthAt15,
   drakeGoldHolding,
   comebackStats,
+  draftAnalysis,
+  banPhaseAnalysis,
   // Add more analytics functions here as they are created
 ]
 

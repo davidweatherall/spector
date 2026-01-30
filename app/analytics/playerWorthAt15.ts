@@ -10,6 +10,7 @@ const DEATH_WINDOW = 30 // If killed within this time before purchase, it's a de
 interface PlayerWorthData {
   playerId: string
   playerName: string
+  teamId: string
   teamName: string
   role: PlayerRole | null
   champName: string
@@ -19,7 +20,9 @@ interface PlayerWorthData {
 
 interface GameWorthData {
   gameId: string
+  blueTeamId: string
   blueTeamName: string
+  redTeamId: string
   redTeamName: string
   players: PlayerWorthData[]
 }
@@ -142,6 +145,7 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): GameWorth
     players.push({
       playerId: player.id,
       playerName: player.name,
+      teamId: player.teamId,
       teamName: getTeamName(teams, player.teamId),
       role,
       champName: player.champName,
@@ -152,7 +156,9 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): GameWorth
   
   return {
     gameId: game.id,
+    blueTeamId: game.blueSideTeamId,
     blueTeamName,
+    redTeamId,
     redTeamName,
     players,
   }

@@ -4,6 +4,7 @@ import { AnalyticsResult } from './types'
 
 interface PlayerGoldData {
   playerName: string
+  teamId: string
   teamName: string
   role: 'mid' | 'bot'
   champName: string
@@ -15,10 +16,13 @@ interface DrakeGoldData {
   drakeNumber: number // 1st drake, 2nd drake, etc.
   drakeType: string
   drakeTime: number
+  killerTeamId: string
   killerTeamName: string
   
-  // Team names
+  // Team IDs and names
+  blueTeamId: string
   blueTeamName: string
+  redTeamId: string
   redTeamName: string
   
   // Gold holding data for mid and ADC from both teams
@@ -100,6 +104,7 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): DrakeGold
     
     // Find which team killed the drake
     const drakeKiller = game.players.find(p => p.id === drake.playerId)
+    const killerTeamId = drakeKiller?.teamId || ''
     const killerTeamName = drakeKiller ? getTeamName(teams, drakeKiller.teamId) : 'Unknown'
     
     // Get coordinates at drake time to find gold values
@@ -112,6 +117,7 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): DrakeGold
       const playerCoord = coordSnapshot.playerCoordinates.find(p => p.playerId === blueMid.id)
       players.push({
         playerName: blueMid.name,
+        teamId: game.blueSideTeamId,
         teamName: blueTeamName,
         role: 'mid',
         champName: blueMid.champName,
@@ -123,6 +129,7 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): DrakeGold
       const playerCoord = coordSnapshot.playerCoordinates.find(p => p.playerId === blueAdc.id)
       players.push({
         playerName: blueAdc.name,
+        teamId: game.blueSideTeamId,
         teamName: blueTeamName,
         role: 'bot',
         champName: blueAdc.champName,
@@ -134,6 +141,7 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): DrakeGold
       const playerCoord = coordSnapshot.playerCoordinates.find(p => p.playerId === redMid.id)
       players.push({
         playerName: redMid.name,
+        teamId: redTeamId,
         teamName: redTeamName,
         role: 'mid',
         champName: redMid.champName,
@@ -145,6 +153,7 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): DrakeGold
       const playerCoord = coordSnapshot.playerCoordinates.find(p => p.playerId === redAdc.id)
       players.push({
         playerName: redAdc.name,
+        teamId: redTeamId,
         teamName: redTeamName,
         role: 'bot',
         champName: redAdc.champName,
@@ -157,8 +166,11 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): DrakeGold
       drakeNumber,
       drakeType: drake.monsterName,
       drakeTime: drake.time,
+      killerTeamId,
       killerTeamName,
+      blueTeamId: game.blueSideTeamId,
       blueTeamName,
+      redTeamId,
       redTeamName,
       players,
     })

@@ -16,12 +16,15 @@ interface AdcGrubData {
   killerTeamId: string
   killerTeamName: string
   
-  // Team names
+  // Team IDs and names
+  blueTeamId: string
   blueTeamName: string
+  redTeamId: string
   redTeamName: string
   
   // ADC position data for the team that killed the grub
   adcPlayerName: string
+  adcTeamId: string
   adcTeamName: string
   adcX: number | null
   adcY: number | null
@@ -141,9 +144,12 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): AdcGrubDa
     grubTime: firstGrub.time,
     killerTeamId,
     killerTeamName,
+    blueTeamId: game.blueSideTeamId,
     blueTeamName,
+    redTeamId,
     redTeamName,
     adcPlayerName: adcPlayer.name,
+    adcTeamId: killerTeamId,
     adcTeamName: killerTeamName,
     adcX,
     adcY,

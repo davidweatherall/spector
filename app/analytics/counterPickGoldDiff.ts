@@ -6,6 +6,7 @@ const FIFTEEN_MINUTES_IN_SECONDS = 15 * 60
 
 interface CounterPickData {
   playerName: string
+  teamId: string
   teamName: string
   champName: string
   role: PlayerRole
@@ -127,6 +128,7 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): CounterPi
     
     results.push({
       playerName: player.name,
+      teamId: player.teamId,
       teamName: getTeamName(teams, player.teamId),
       champName: player.champName,
       role,

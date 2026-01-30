@@ -8,10 +8,13 @@ const RECALL_CHANNEL_TIME = 8
 interface GrubRecallData {
   gameId: string
   grubTime: number
+  killerTeamId: string
   killerTeamName: string
   
-  // Team names
+  // Team IDs and names
+  blueTeamId: string
   blueTeamName: string
+  redTeamId: string
   redTeamName: string
   
   // Support recall times (purchase time - 8 seconds for recall channel)
@@ -90,6 +93,7 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): GrubRecal
   
   // Find which team killed the grub
   const grubKiller = game.players.find(p => p.id === firstGrub.playerId)
+  const killerTeamId = grubKiller?.teamId || ''
   const killerTeamName = grubKiller ? getTeamName(teams, grubKiller.teamId) : 'Unknown'
   
   // Get support recall times (purchase time - 8 seconds for recall channel)
@@ -112,8 +116,11 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): GrubRecal
   return {
     gameId: game.id,
     grubTime: firstGrub.time,
+    killerTeamId,
     killerTeamName,
+    blueTeamId: game.blueSideTeamId,
     blueTeamName,
+    redTeamId,
     redTeamName,
     blueSupportRecallTime,
     redSupportRecallTime,

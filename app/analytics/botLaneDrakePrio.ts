@@ -15,8 +15,10 @@ interface DrakeData {
   killerTeamId: string
   killerTeamName: string
   
-  // Team names
+  // Team IDs and names
+  blueTeamId: string
   blueTeamName: string
+  redTeamId: string
   redTeamName: string
   
   // Bot lane prio info
@@ -244,7 +246,9 @@ function analyzeGame(game: StreamlinedGame, teams: StreamlinedTeam[]): DrakeData
     drakeTime: firstDrake.time,
     killerTeamId,
     killerTeamName: getTeamName(teams, killerTeamId),
+    blueTeamId: game.blueSideTeamId,
     blueTeamName,
+    redTeamId,
     redTeamName,
     blueBotPlayer: blueBotPlayer.name,
     redBotPlayer: redBotPlayer.name,

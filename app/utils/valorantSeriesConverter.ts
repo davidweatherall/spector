@@ -24,6 +24,14 @@ export interface ValorantPlayer {
   name: string
 }
 
+export interface GamePlayer {
+  id: string
+  name: string
+  teamId: string
+  characterId: string  // e.g. 'viper', 'fade'
+  characterName: string // e.g. 'Viper', 'Fade'
+}
+
 export interface MapVetoAction {
   sequenceNumber: number
   occurredAt: string
@@ -38,6 +46,7 @@ export interface ValorantGame {
   mapId: string
   startedAt: string | null
   winnerTeamId: string | null
+  players: GamePlayer[]
   rounds: ValorantRound[]
 }
 
@@ -47,6 +56,11 @@ export interface ValorantRound {
   winnerTeamName: string
   winType: string // 'opponentEliminated', 'bombExploded', 'bombDefused', 'timeExpired'
   purchases: RoundPurchase[]
+  abilityUsages: AbilityUsage[]
+  kills: PlayerKill[]
+  bombPlant?: BombPlant
+  bombDefuse?: BombDefuse
+  coordinateTracking: CoordinateSnapshot[]
 }
 
 export interface RoundPurchase {
@@ -54,6 +68,60 @@ export interface RoundPurchase {
   playerName: string
   teamId: string
   items: string[] // Items purchased this round
+}
+
+export interface AbilityUsage {
+  playerId: string
+  playerName: string
+  abilityId: string
+  position: {
+    x: number
+    y: number
+  }
+  occurredAt: string
+}
+
+export interface CoordinateSnapshot {
+  time: number // timestamp in ms
+  playerCoordinates: PlayerCoordinate[]
+}
+
+export interface PlayerCoordinate {
+  playerId: string
+  x: number
+  y: number
+}
+
+export interface PlayerKill {
+  killerId: string
+  killerName: string
+  victimId: string
+  victimName: string
+  killerPosition: {
+    x: number
+    y: number
+  }
+  victimPosition: {
+    x: number
+    y: number
+  }
+  occurredAt: string
+}
+
+export interface BombPlant {
+  playerId: string
+  playerName: string
+  position: {
+    x: number
+    y: number
+  }
+  occurredAt: string
+}
+
+export interface BombDefuse {
+  playerId: string
+  playerName: string
+  occurredAt: string
 }
 
 // ============================================================================
@@ -117,8 +185,16 @@ interface TeamState {
 interface PlayerState {
   id: string
   name: string
+  position?: {
+    x: number
+    y: number
+  }
   inventory?: {
     items: ItemState[]
+  }
+  character?: {
+    id: string
+    name: string
   }
 }
 
@@ -142,9 +218,16 @@ interface GameDataCollector {
   mapId: string
   startedAt: string | null
   winnerTeamId: string | null
+  players: GamePlayer[]
   rounds: ValorantRound[]
   lastRoundItems: LastRoundItems
   currentRoundPurchases: RoundPurchase[]
+  currentRoundAbilities: AbilityUsage[]
+  currentRoundKills: PlayerKill[]
+  currentRoundBombPlant: BombPlant | null
+  currentRoundBombDefuse: BombDefuse | null
+  currentRoundCoordinates: CoordinateSnapshot[]
+  inRoundPhase: boolean // Track if we're between round-started-freezetime and team-won-round
 }
 
 // ============================================================================
@@ -318,7 +401,34 @@ function extractTeams(batches: ValorantEventBatch[], mapVeto: MapVetoAction[]): 
 }
 
 /**
- * Extract games with round data and item purchases
+ * Extract all player coordinates from an event's seriesState
+ */
+function extractAllPlayerCoordinates(event: ValorantEvent): PlayerCoordinate[] {
+  const coordinates: PlayerCoordinate[] = []
+  
+  const games = event.seriesState?.games
+  if (!games || games.length === 0) return coordinates
+  
+  // Use the latest game
+  const game = games[games.length - 1]
+  
+  for (const team of game.teams || []) {
+    for (const player of team.players || []) {
+      if (player.position) {
+        coordinates.push({
+          playerId: player.id,
+          x: player.position.x,
+          y: player.position.y,
+        })
+      }
+    }
+  }
+  
+  return coordinates
+}
+
+/**
+ * Extract games with round data, item purchases, ability usages, and coordinate tracking
  */
 function extractGamesWithRounds(
   batches: ValorantEventBatch[],
@@ -341,8 +451,34 @@ function extractGamesWithRounds(
             mapId: currentGame.mapId,
             startedAt: currentGame.startedAt,
             winnerTeamId: currentGame.winnerTeamId,
+            players: currentGame.players,
             rounds: currentGame.rounds,
           })
+        }
+        
+        // Extract player characters from seriesState
+        const gamePlayers: GamePlayer[] = []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const seriesState = (event.actor as any)?.state || event.seriesState
+        if (seriesState?.games?.length > 0) {
+          const latestGame = seriesState.games[seriesState.games.length - 1]
+          if (latestGame?.teams) {
+            for (const team of latestGame.teams) {
+              if (team?.players) {
+                for (const player of team.players) {
+                  if (player?.character) {
+                    gamePlayers.push({
+                      id: player.id,
+                      name: player.name,
+                      teamId: team.id,
+                      characterId: player.character.id || player.character.name?.toLowerCase() || 'unknown',
+                      characterName: player.character.name || player.character.id || 'Unknown',
+                    })
+                  }
+                }
+              }
+            }
+          }
         }
         
         // Start new game
@@ -352,9 +488,16 @@ function extractGamesWithRounds(
           mapId,
           startedAt: batch.occurredAt,
           winnerTeamId: null,
+          players: gamePlayers,
           rounds: [],
           lastRoundItems: {},
           currentRoundPurchases: [],
+          currentRoundAbilities: [],
+          currentRoundKills: [],
+          currentRoundBombPlant: null,
+          currentRoundBombDefuse: null,
+          currentRoundCoordinates: [],
+          inRoundPhase: false,
         }
         gameIndex++
         continue
@@ -362,7 +505,29 @@ function extractGamesWithRounds(
       
       if (!currentGame) continue
       
+      // Round started freezetime - start tracking coordinates, abilities, kills, and bomb events
+      if (event.type === 'round-started-freezetime') {
+        // Reset abilities, kills, bomb events, and coordinates for this round (tracking starts now)
+        currentGame.currentRoundAbilities = []
+        currentGame.currentRoundKills = []
+        currentGame.currentRoundBombPlant = null
+        currentGame.currentRoundBombDefuse = null
+        currentGame.currentRoundCoordinates = []
+        currentGame.inRoundPhase = true
+        
+        // Capture initial coordinates at start of freezetime
+        const coords = extractAllPlayerCoordinates(event)
+        if (coords.length > 0) {
+          currentGame.currentRoundCoordinates.push({
+            time: new Date(batch.occurredAt).getTime(),
+            playerCoordinates: coords,
+          })
+        }
+        continue
+      }
+      
       // Round ended freezetime (buy phase ended) - capture purchases
+      // This is the last moment players can buy items
       if (event.type === 'round-ended-freezetime') {
         const currentInventories = extractPlayerInventories(event)
         const purchases = calculatePurchases(
@@ -373,7 +538,100 @@ function extractGamesWithRounds(
         continue
       }
       
-      // Team won round - record round result
+      // During round phase, track coordinates for every event
+      if (currentGame.inRoundPhase && event.seriesState) {
+        const coords = extractAllPlayerCoordinates(event)
+        if (coords.length > 0) {
+          currentGame.currentRoundCoordinates.push({
+            time: new Date(batch.occurredAt).getTime(),
+            playerCoordinates: coords,
+          })
+        }
+      }
+      
+      // Player used ability - track it with position (during round phase)
+      if (event.type === 'player-used-ability' && currentGame.inRoundPhase) {
+        const playerId = event.actor?.id || ''
+        const abilityId = event.target?.id || ''
+        
+        // Find player position from seriesState
+        const playerInfo = findPlayerInSeriesState(event, playerId)
+        
+        currentGame.currentRoundAbilities.push({
+          playerId,
+          playerName: playerInfo?.name || playerId,
+          abilityId,
+          position: {
+            x: playerInfo?.position?.x || 0,
+            y: playerInfo?.position?.y || 0,
+          },
+          occurredAt: batch.occurredAt,
+        })
+        continue
+      }
+      
+      // Player killed player - track kills with positions (during round phase)
+      if (event.type === 'player-killed-player' && currentGame.inRoundPhase) {
+        const killerId = event.actor?.id || ''
+        const victimId = event.target?.id || ''
+        
+        // Find both players' positions from seriesState
+        const killerInfo = findPlayerInSeriesState(event, killerId)
+        const victimInfo = findPlayerInSeriesState(event, victimId)
+        
+        currentGame.currentRoundKills.push({
+          killerId,
+          killerName: killerInfo?.name || killerId,
+          victimId,
+          victimName: victimInfo?.name || victimId,
+          killerPosition: {
+            x: killerInfo?.position?.x || 0,
+            y: killerInfo?.position?.y || 0,
+          },
+          victimPosition: {
+            x: victimInfo?.position?.x || 0,
+            y: victimInfo?.position?.y || 0,
+          },
+          occurredAt: batch.occurredAt,
+        })
+        continue
+      }
+      
+      // Bomb planted - track who planted and where
+      if (event.type === 'player-completed-plantBomb' && currentGame.inRoundPhase) {
+        const playerId = event.actor?.id || ''
+        const playerInfo = findPlayerInSeriesState(event, playerId)
+        // Position can also be in actor.state.game.position
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const actorState = event.actor as any
+        const position = actorState?.state?.game?.position || playerInfo?.position
+        
+        currentGame.currentRoundBombPlant = {
+          playerId,
+          playerName: playerInfo?.name || playerId,
+          position: {
+            x: position?.x || 0,
+            y: position?.y || 0,
+          },
+          occurredAt: batch.occurredAt,
+        }
+        continue
+      }
+      
+      // Bomb defused - track who defused
+      if (event.type === 'player-completed-defuseBomb' && currentGame.inRoundPhase) {
+        const playerId = event.actor?.id || ''
+        const playerInfo = findPlayerInSeriesState(event, playerId)
+        
+        currentGame.currentRoundBombDefuse = {
+          playerId,
+          playerName: playerInfo?.name || playerId,
+          occurredAt: batch.occurredAt,
+        }
+        continue
+      }
+      
+      // Team won round - record round result, end combat phase
       if (event.type === 'team-won-round') {
         const winnerTeamId = event.actor?.id || ''
         const winnerTeamName = event.actor?.state?.name || ''
@@ -386,10 +644,21 @@ function extractGamesWithRounds(
           winnerTeamName,
           winType,
           purchases: currentGame.currentRoundPurchases,
+          abilityUsages: currentGame.currentRoundAbilities,
+          kills: currentGame.currentRoundKills,
+          bombPlant: currentGame.currentRoundBombPlant || undefined,
+          bombDefuse: currentGame.currentRoundBombDefuse || undefined,
+          coordinateTracking: currentGame.currentRoundCoordinates,
         })
         
-        // Reset purchases for next round
+        // Reset for next round
         currentGame.currentRoundPurchases = []
+        currentGame.currentRoundAbilities = []
+        currentGame.currentRoundKills = []
+        currentGame.currentRoundBombPlant = null
+        currentGame.currentRoundBombDefuse = null
+        currentGame.currentRoundCoordinates = []
+        currentGame.inRoundPhase = false
         continue
       }
       
@@ -417,11 +686,36 @@ function extractGamesWithRounds(
       mapId: currentGame.mapId,
       startedAt: currentGame.startedAt,
       winnerTeamId: currentGame.winnerTeamId,
+      players: currentGame.players,
       rounds: currentGame.rounds,
     })
   }
   
   return games
+}
+
+/**
+ * Find a player in the seriesState by their ID
+ */
+function findPlayerInSeriesState(
+  event: ValorantEvent,
+  playerId: string
+): PlayerState | null {
+  const games = event.seriesState?.games
+  if (!games || games.length === 0) return null
+  
+  // Use the latest game
+  const game = games[games.length - 1]
+  
+  for (const team of game.teams || []) {
+    for (const player of team.players || []) {
+      if (player.id === playerId) {
+        return player
+      }
+    }
+  }
+  
+  return null
 }
 
 /**

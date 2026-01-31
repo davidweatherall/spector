@@ -621,25 +621,6 @@ export default function ValorantSeriesPage() {
                   )
                 })}
               </div>
-
-              {/* Raw Data Debug */}
-              <div className={styles.gameCard} style={{ marginTop: '2rem' }}>
-                <div className={styles.gameHeader}>
-                  <h3 className={styles.gameTitle}>Raw Data (Debug)</h3>
-                </div>
-                <div className={styles.gameContent}>
-                  <pre style={{ 
-                    fontSize: '0.7rem', 
-                    overflow: 'auto', 
-                    maxHeight: '400px',
-                    background: 'rgba(0,0,0,0.3)',
-                    padding: '1rem',
-                    borderRadius: '4px'
-                  }}>
-                    {JSON.stringify(seriesData, null, 2)}
-                  </pre>
-                </div>
-              </div>
             </>
           )}
         </div>

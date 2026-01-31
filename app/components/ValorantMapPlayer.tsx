@@ -61,6 +61,7 @@ export default function ValorantMapPlayer({
   // 'callouts' uses bounds from map callouts, 'api' uses Valorant API multipliers, 'auto' uses round data bounds
   const [coordMode, setCoordMode] = useState<'callouts' | 'api' | 'auto'>('callouts')
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastTickTimeRef = useRef<number>(0) // Track real time for accurate playback
   const progressBarRef = useRef<HTMLDivElement>(null)
 
   // Get map configs from the valorantMapData utility
@@ -241,15 +242,23 @@ export default function ValorantMapPlayer({
     }
   }, [coordMode, apiConfig, calloutConfig, convertWithConfig, convertWithAutoBounds])
 
-  // Playback interval - advance time based on real time
-  const TICK_INTERVAL_MS = 50 // Update every 50ms for smooth animation
-  const TIME_INCREMENT_MS = 50 // How much game time passes per tick (at 1x speed)
+  // Playback interval - advance time based on real elapsed time
+  const TICK_INTERVAL_MS = 16 // ~60fps for smooth animation
 
   useEffect(() => {
     if (isPlaying && timeBounds.duration > 0) {
+      lastTickTimeRef.current = performance.now()
+      
       intervalRef.current = setInterval(() => {
+        const now = performance.now()
+        const realElapsed = now - lastTickTimeRef.current
+        lastTickTimeRef.current = now
+        
+        // Convert real elapsed time to game time based on playback speed
+        const gameTimeElapsed = realElapsed * playbackSpeed
+        
         setCurrentTime(prev => {
-          const next = prev + TIME_INCREMENT_MS * playbackSpeed
+          const next = prev + gameTimeElapsed
           if (next >= timeBounds.duration) {
             setIsPlaying(false)
             return timeBounds.duration

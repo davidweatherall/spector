@@ -2382,6 +2382,11 @@
   {
     "uuid": "224b0a95-48b9-f703-1bd8-67aca101a61f",
     "displayName": "Abyss",
+    "xOffset": 0,
+    "yOffset": 2,
+    "xScale": 1.2,
+    "yScale": 1.06,
+    "rotate": 180,
     "narrativeDescription": null,
     "tacticalDescription": "A/B Sites",
     "coordinates": "70° 50' AJ\" N, 9° 00' VX\" W",

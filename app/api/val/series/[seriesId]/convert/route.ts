@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readJSON, storeJSON } from '../../../../../storage'
 import { convertValorantSeriesData, ValorantStreamlinedSeries } from '../../../../../utils/valorantSeriesConverter'
+import { runAllValorantAnalytics } from '../../../../../val-analytics'
 
 // Disable Next.js caching for large file downloads
 export const dynamic = 'force-dynamic'
@@ -77,6 +78,11 @@ export async function GET(
     // Cache the result
     await storeJSON(convertedKey, streamlined)
     console.log(`Valorant series ${seriesId} converted and cached`)
+
+    // Run Valorant analytics
+    console.log(`Running Valorant analytics for series ${seriesId}...`)
+    await runAllValorantAnalytics(seriesId, streamlined)
+    console.log(`Valorant analytics complete for series ${seriesId}`)
 
     return NextResponse.json({ data: streamlined, cached: false })
   } catch (error) {

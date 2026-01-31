@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import styles from './ValorantMapPlayer.module.css'
-import { getMapCoordinateConfig, getMapCoordinateConfigFromBounds, getMapBounds } from '../utils/valorantMapData'
+import { getMapCoordinateConfig, getMapCoordinateConfigFromBounds, getMapBounds, getMapAdjustment } from '../utils/valorantMapData'
 
 interface PlayerCoordinate {
   playerId: string
@@ -45,6 +45,7 @@ interface ValorantMapPlayerProps {
   team1Id: string // First team ID (for color assignment)
   roundNumber: number
   kills?: PlayerKill[] // Kill events for this round
+  freezetimeEndedAt?: string // Timestamp when buy phase ended
 }
 
 export default function ValorantMapPlayer({
@@ -54,6 +55,7 @@ export default function ValorantMapPlayer({
   team1Id,
   roundNumber,
   kills = [],
+  freezetimeEndedAt,
 }: ValorantMapPlayerProps) {
   const [currentTime, setCurrentTime] = useState(0) // Time offset from start in ms
   const [isPlaying, setIsPlaying] = useState(false)
@@ -68,6 +70,7 @@ export default function ValorantMapPlayer({
   const apiConfig = useMemo(() => getMapCoordinateConfig(mapName), [mapName])
   const calloutConfig = useMemo(() => getMapCoordinateConfigFromBounds(mapName), [mapName])
   const mapBounds = useMemo(() => getMapBounds(mapName), [mapName])
+  const mapAdjustment = useMemo(() => getMapAdjustment(mapName), [mapName])
   const mapImagePath = `/val-map/${mapName.toLowerCase()}.png`
 
   // Calculate time bounds from coordinate tracking
@@ -118,9 +121,9 @@ export default function ValorantMapPlayer({
       }
     }
 
-    // Add 10% padding to bounds
-    const xPadding = (maxX - minX) * 0.1
-    const yPadding = (maxY - minY) * 0.1
+    // Add 25% padding to bounds for better spacing
+    const xPadding = (maxX - minX) * 0.25
+    const yPadding = (maxY - minY) * 0.25
 
     return {
       minX: minX - xPadding,
@@ -228,19 +231,34 @@ export default function ValorantMapPlayer({
     }
   }, [coordinateBounds])
 
-  // Main conversion function - choose method based on mode
+  // Main conversion function - choose method based on mode, then apply map-specific adjustments
   const convertToPercent = useCallback((x: number, y: number): { xPercent: number; yPercent: number } => {
+    let result: { xPercent: number; yPercent: number }
+    
     switch (coordMode) {
       case 'api':
-        return convertWithConfig(x, y, apiConfig)
+        result = convertWithConfig(x, y, apiConfig)
+        break
       case 'callouts':
-        return convertWithConfig(x, y, calloutConfig)
+        result = convertWithConfig(x, y, calloutConfig)
+        break
       case 'auto':
-        return convertWithAutoBounds(x, y)
+        result = convertWithAutoBounds(x, y)
+        break
       default:
-        return convertWithConfig(x, y, calloutConfig)
+        result = convertWithConfig(x, y, calloutConfig)
     }
-  }, [coordMode, apiConfig, calloutConfig, convertWithConfig, convertWithAutoBounds])
+    
+    // Apply per-map scale (around center) then offset for fine-tuning
+    // Scale formula: newPos = center + (pos - center) * scale
+    const centerX = 50
+    const centerY = 50
+    
+    return {
+      xPercent: centerX + (result.xPercent - centerX) * mapAdjustment.xScale + mapAdjustment.xOffset,
+      yPercent: centerY + (result.yPercent - centerY) * mapAdjustment.yScale + mapAdjustment.yOffset,
+    }
+  }, [coordMode, apiConfig, calloutConfig, convertWithConfig, convertWithAutoBounds, mapAdjustment])
 
   // Playback interval - advance time based on real elapsed time
   const TICK_INTERVAL_MS = 16 // ~60fps for smooth animation
@@ -312,6 +330,23 @@ export default function ValorantMapPlayer({
     ? (currentTime / timeBounds.duration) * 100 
     : 0
 
+  // Calculate freezetime end position as percentage of duration
+  const freezetimeEndPercentage = useMemo(() => {
+    if (!freezetimeEndedAt || timeBounds.duration === 0) return null
+    const freezetimeEndTime = new Date(freezetimeEndedAt).getTime()
+    const offsetFromStart = freezetimeEndTime - timeBounds.startTime
+    if (offsetFromStart < 0 || offsetFromStart > timeBounds.duration) return null
+    return (offsetFromStart / timeBounds.duration) * 100
+  }, [freezetimeEndedAt, timeBounds])
+
+  // Jump to freezetime end
+  const jumpToFreezetimeEnd = useCallback(() => {
+    if (!freezetimeEndedAt || timeBounds.duration === 0) return
+    const freezetimeEndTime = new Date(freezetimeEndedAt).getTime()
+    const offsetFromStart = freezetimeEndTime - timeBounds.startTime
+    setCurrentTime(Math.max(0, Math.min(offsetFromStart, timeBounds.duration)))
+  }, [freezetimeEndedAt, timeBounds])
+
   if (!coordinateTracking || coordinateTracking.length === 0) {
     return (
       <div className={styles.container}>
@@ -331,7 +366,14 @@ export default function ValorantMapPlayer({
 
       {/* Map Container */}
       <div className={styles.mapWrapper}>
-        <div className={styles.mapContainer}>
+        <div 
+          className={styles.mapContainer}
+          style={{
+            transform: mapAdjustment.rotate 
+              ? 'rotate(180deg) rotateY(180deg)' 
+              : 'rotateY(180deg)'
+          }}
+        >
           <Image
             src={mapImagePath}
             alt={mapName}
@@ -371,6 +413,7 @@ export default function ValorantMapPlayer({
                     width={24}
                     height={24}
                     className={styles.agentImage}
+                    style={mapAdjustment.rotate ? { transform: 'rotateX(180deg)' } : undefined}
                   />
                 ) : (
                   <span className={styles.playerInitial}>
@@ -392,6 +435,18 @@ export default function ValorantMapPlayer({
             className={styles.progressFill}
             style={{ width: `${progressPercentage}%` }}
           />
+          {/* Freezetime end marker */}
+          {freezetimeEndPercentage !== null && (
+            <div 
+              className={styles.freezetimeMarker}
+              style={{ left: `${freezetimeEndPercentage}%` }}
+              onClick={(e) => {
+                e.stopPropagation()
+                jumpToFreezetimeEnd()
+              }}
+              title="Skip to round start (end of buy phase)"
+            />
+          )}
           <div 
             className={styles.progressHandle}
             style={{ left: `${progressPercentage}%` }}

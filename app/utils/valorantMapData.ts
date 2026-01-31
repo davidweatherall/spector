@@ -45,6 +45,15 @@ export interface ValorantMapData {
   xScalarToAdd: number
   yScalarToAdd: number
   callouts: ValorantMapCallout[] | null
+  // Custom adjustments to fine-tune positioning for our map images (optional)
+  // Offsets are added to final position (e.g., xOffset: -5 shifts left 5%)
+  // Scale adjusts spread around center (e.g., xScale: 0.9 pulls positions 10% toward center)
+  // Rotate: if true, applies 180deg rotation to map container
+  xOffset?: number
+  yOffset?: number
+  xScale?: number
+  yScale?: number
+  rotate?: boolean
 }
 
 export interface MapCoordinateConfig {
@@ -59,6 +68,14 @@ export interface MapBounds {
   maxX: number
   minY: number
   maxY: number
+}
+
+export interface MapAdjustment {
+  xOffset: number  // Shifts all positions (percentage points)
+  yOffset: number
+  xScale: number   // Scales positions around center (1.0 = no change, 0.9 = 10% closer to center)
+  yScale: number
+  rotate: boolean  // If true, apply 180deg rotation to map container
 }
 
 // ============================================================================
@@ -119,6 +136,21 @@ export function getMapByName(mapName: string): ValorantMapData | undefined {
 }
 
 /**
+ * Get custom position adjustments for a map (for fine-tuning positioning)
+ * Returns default values (no adjustment) if no custom values are set
+ */
+export function getMapAdjustment(mapName: string): MapAdjustment {
+  const map = getMapByName(mapName)
+  return {
+    xOffset: map?.xOffset ?? 0,
+    yOffset: map?.yOffset ?? 0,
+    xScale: map?.xScale ?? 1.0,
+    yScale: map?.yScale ?? 1.0,
+    rotate: map?.rotate ?? false,
+  }
+}
+
+/**
  * Get the bounds for a map based on callout locations
  */
 export function getMapBounds(mapName: string): MapBounds {
@@ -142,47 +174,76 @@ export function getMapBounds(mapName: string): MapBounds {
 
 /**
  * Get coordinate config for a map by name
- * Returns default config if map not found
+ * The raw API values don't work with our map images directly because they're
+ * calibrated for Valorant's official minimap images.
+ * 
+ * This function calculates corrected values by:
+ * 1. Computing where each callout SHOULD be (using bounds-based calculation)
+ * 2. Finding the average correction needed across all callouts
+ * 3. Keeping the API multipliers but adjusting scalars
  */
 export function getMapCoordinateConfig(mapName: string): MapCoordinateConfig {
   const map = getMapByName(mapName)
   
-  if (map) {
+  if (map && map.callouts && map.callouts.length > 0) {
+    // Get the bounds-based config (which we know works)
+    const boundsConfig = getMapCoordinateConfigFromBounds(mapName)
+    const callouts = map.callouts
+    
+    // Calculate the scale factor between API multipliers and bounds multipliers
+    // This tells us how much to scale the API results
+    const xScaleFactor = boundsConfig.xMultiplier / map.xMultiplier
+    const yScaleFactor = boundsConfig.yMultiplier / map.yMultiplier
+    
+    // Use scaled API multipliers that match the bounds range
+    const scaledXMultiplier = map.xMultiplier * xScaleFactor
+    const scaledYMultiplier = map.yMultiplier * yScaleFactor
+    
+    // Calculate centroid of all callouts
+    let sumX = 0, sumY = 0
+    for (const callout of callouts) {
+      sumX += callout.location.x
+      sumY += callout.location.y
+    }
+    const centroidX = sumX / callouts.length
+    const centroidY = sumY / callouts.length
+    
+    // Where should centroid be according to bounds-based calculation?
+    const expectedX = centroidX * boundsConfig.xMultiplier + boundsConfig.xScalarToAdd
+    const expectedY = centroidY * boundsConfig.yMultiplier + boundsConfig.yScalarToAdd
+    
+    // Calculate scalar that places centroid correctly with scaled multipliers
+    const correctedXScalar = expectedX - centroidX * scaledXMultiplier
+    const correctedYScalar = expectedY - centroidY * scaledYMultiplier
+    
     return {
-      xMultiplier: map.xMultiplier,
-      yMultiplier: map.yMultiplier,
-      xScalarToAdd: map.xScalarToAdd,
-      yScalarToAdd: map.yScalarToAdd,
+      xMultiplier: scaledXMultiplier,
+      yMultiplier: scaledYMultiplier,
+      xScalarToAdd: correctedXScalar,
+      yScalarToAdd: correctedYScalar,
     }
   }
   
-  // Default config for unknown maps
-  return {
-    xMultiplier: 0.00007,
-    yMultiplier: -0.00007,
-    xScalarToAdd: 0.5,
-    yScalarToAdd: 0.5,
-  }
+  // Fallback to bounds-based config
+  return getMapCoordinateConfigFromBounds(mapName)
 }
 
 /**
- * Calculate multipliers from bounds that will map coordinates to 5%-95% range
+ * Calculate multipliers from bounds that will map coordinates to 0%-100% range
  */
 export function calculateMultipliersFromBounds(bounds: MapBounds): MapCoordinateConfig {
   const rangeX = bounds.maxX - bounds.minX
   const rangeY = bounds.maxY - bounds.minY
   
-  // We want to map:
-  // minX -> 0.05 (5%)
-  // maxX -> 0.95 (95%)
-  // minY -> 0.95 (95%, because Y is typically flipped)
-  // maxY -> 0.05 (5%)
+  // Map to full 0%-100% range
+  // minX -> 0%, maxX -> 100%
+  // minY -> 100%, maxY -> 0% (Y is flipped)
   
-  const xMultiplier = rangeX > 0 ? 0.9 / rangeX : 0.00007
-  const yMultiplier = rangeY > 0 ? -0.9 / rangeY : -0.00007 // Negative to flip Y
+  const xMultiplier = rangeX > 0 ? 1.0 / rangeX : 0.00007
+  const yMultiplier = rangeY > 0 ? -1.0 / rangeY : -0.00007 // Negative to flip Y
   
-  const xScalarToAdd = 0.05 - bounds.minX * xMultiplier
-  const yScalarToAdd = 0.95 - bounds.minY * yMultiplier
+  const xScalarToAdd = 0 - bounds.minX * xMultiplier
+  const yScalarToAdd = 1 - bounds.minY * yMultiplier
   
   return { xMultiplier, yMultiplier, xScalarToAdd, yScalarToAdd }
 }

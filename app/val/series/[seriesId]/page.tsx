@@ -57,6 +57,7 @@ interface ValorantRound {
   winnerTeamId: string
   winnerTeamName: string
   winType: string
+  freezetimeEndedAt?: string
   purchases: RoundPurchase[]
   abilityUsages: AbilityUsage[]
   kills: PlayerKill[]
@@ -606,6 +607,7 @@ export default function ValorantSeriesPage() {
                                             team1Id={seriesData.teams[0]?.id || ''}
                                             roundNumber={round.roundNumber}
                                             kills={round.kills}
+                                            freezetimeEndedAt={round.freezetimeEndedAt}
                                           />
                                         </td>
                                       </tr>

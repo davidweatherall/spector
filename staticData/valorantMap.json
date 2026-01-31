@@ -3718,6 +3718,11 @@
   {
     "uuid": "e2ad5c54-4114-a870-9641-8ea21279579a",
     "displayName": "Icebox",
+    "xOffset": 1,
+    "yOffset": -6,
+    "xScale": 0.91,
+    "yScale": 1.06,
+    "rotate": false,
     "narrativeDescription": null,
     "tacticalDescription": "A/B Sites",
     "coordinates": "76°44' A\"N 149°30' Z\"E",
@@ -4452,6 +4457,9 @@
   {
     "uuid": "2bee0dc9-4ffe-519b-1cbd-7fbe763a6047",
     "displayName": "Haven",
+    "xOffset": 0,
+    "yOffset": 0,
+    "rotate": true,
     "narrativeDescription": null,
     "tacticalDescription": "A/B/C Sites",
     "coordinates": "27°28'A'N,89°38'WZ'E",

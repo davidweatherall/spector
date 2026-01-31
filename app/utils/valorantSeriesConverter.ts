@@ -55,6 +55,7 @@ export interface ValorantRound {
   winnerTeamId: string
   winnerTeamName: string
   winType: string // 'opponentEliminated', 'bombExploded', 'bombDefused', 'timeExpired'
+  freezetimeEndedAt?: string // Timestamp when buy phase ended and combat started
   purchases: RoundPurchase[]
   abilityUsages: AbilityUsage[]
   kills: PlayerKill[]
@@ -226,6 +227,7 @@ interface GameDataCollector {
   currentRoundKills: PlayerKill[]
   currentRoundBombPlant: BombPlant | null
   currentRoundBombDefuse: BombDefuse | null
+  currentRoundFreezetimeEndedAt: string | null
   currentRoundCoordinates: CoordinateSnapshot[]
   inRoundPhase: boolean // Track if we're between round-started-freezetime and team-won-round
 }
@@ -496,6 +498,7 @@ function extractGamesWithRounds(
           currentRoundKills: [],
           currentRoundBombPlant: null,
           currentRoundBombDefuse: null,
+          currentRoundFreezetimeEndedAt: null,
           currentRoundCoordinates: [],
           inRoundPhase: false,
         }
@@ -512,6 +515,7 @@ function extractGamesWithRounds(
         currentGame.currentRoundKills = []
         currentGame.currentRoundBombPlant = null
         currentGame.currentRoundBombDefuse = null
+        currentGame.currentRoundFreezetimeEndedAt = null
         currentGame.currentRoundCoordinates = []
         currentGame.inRoundPhase = true
         
@@ -526,7 +530,7 @@ function extractGamesWithRounds(
         continue
       }
       
-      // Round ended freezetime (buy phase ended) - capture purchases
+      // Round ended freezetime (buy phase ended) - capture purchases and timestamp
       // This is the last moment players can buy items
       if (event.type === 'round-ended-freezetime') {
         const currentInventories = extractPlayerInventories(event)
@@ -535,6 +539,7 @@ function extractGamesWithRounds(
           currentGame.lastRoundItems
         )
         currentGame.currentRoundPurchases = purchases
+        currentGame.currentRoundFreezetimeEndedAt = batch.occurredAt
         continue
       }
       
@@ -643,6 +648,7 @@ function extractGamesWithRounds(
           winnerTeamId,
           winnerTeamName,
           winType,
+          freezetimeEndedAt: currentGame.currentRoundFreezetimeEndedAt || undefined,
           purchases: currentGame.currentRoundPurchases,
           abilityUsages: currentGame.currentRoundAbilities,
           kills: currentGame.currentRoundKills,
@@ -657,6 +663,7 @@ function extractGamesWithRounds(
         currentGame.currentRoundKills = []
         currentGame.currentRoundBombPlant = null
         currentGame.currentRoundBombDefuse = null
+        currentGame.currentRoundFreezetimeEndedAt = null
         currentGame.currentRoundCoordinates = []
         currentGame.inRoundPhase = false
         continue

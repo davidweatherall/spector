@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import styles from './ValorantMapPlayer.module.css'
-import { getMapCoordinateConfig, getMapCoordinateConfigFromBounds, getMapBounds, getMapAdjustment } from '../utils/valorantMapData'
+import { getMapCoordinateConfig, getMapCoordinateConfigFromBounds, getMapBounds, getMapAdjustment, getClosestCallout } from '../utils/valorantMapData'
 
 interface PlayerCoordinate {
   playerId: string
@@ -369,8 +369,8 @@ export default function ValorantMapPlayer({
         <div 
           className={styles.mapContainer}
           style={{
-            transform: mapAdjustment.rotate 
-              ? 'rotate(180deg) rotateY(180deg)' 
+            transform: mapAdjustment.rotate !== 0
+              ? `rotate(${mapAdjustment.rotate}deg) rotateY(180deg)` 
               : 'rotateY(180deg)'
           }}
         >
@@ -404,7 +404,7 @@ export default function ValorantMapPlayer({
                   top: `${yPercent}%`,
                   opacity: isDead ? 0.5 : 1,
                 }}
-                title={`${playerInfo.name}${isDead ? ' (Dead)' : ''} (${coord.x.toFixed(0)}, ${coord.y.toFixed(0)})`}
+                title={`${playerInfo.name}${isDead ? ' (Dead)' : ''}\n${getClosestCallout(mapName, coord.x, coord.y) || 'Unknown'}`}
               >
                 {agentImagePath ? (
                   <Image
@@ -413,7 +413,7 @@ export default function ValorantMapPlayer({
                     width={24}
                     height={24}
                     className={styles.agentImage}
-                    style={mapAdjustment.rotate ? { transform: 'rotateX(180deg)' } : undefined}
+                    style={mapAdjustment.rotate !== 0 ? { transform: `rotate(${mapAdjustment.rotate}deg)` } : undefined}
                   />
                 ) : (
                   <span className={styles.playerInitial}>

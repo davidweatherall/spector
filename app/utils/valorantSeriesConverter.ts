@@ -8,6 +8,7 @@
 
 export interface ValorantStreamlinedSeries {
   seriesId: string
+  startedAt: string | null
   teams: ValorantTeam[]
   mapVeto: MapVetoAction[]
   games: ValorantGame[]
@@ -24,12 +25,23 @@ export interface ValorantPlayer {
   name: string
 }
 
+export interface PlayerStats {
+  kills: number
+  deaths: number
+  assists: number
+  attackerKills: number
+  attackerDeaths: number
+  defenderKills: number
+  defenderDeaths: number
+}
+
 export interface GamePlayer {
   id: string
   name: string
   teamId: string
   characterId: string  // e.g. 'viper', 'fade'
   characterName: string // e.g. 'Viper', 'Fade'
+  stats: PlayerStats
 }
 
 export interface MapVetoAction {
@@ -50,11 +62,17 @@ export interface ValorantGame {
   rounds: ValorantRound[]
 }
 
+export interface TeamSide {
+  teamId: string
+  side: 'attacker' | 'defender'
+}
+
 export interface ValorantRound {
   roundNumber: number
   winnerTeamId: string
   winnerTeamName: string
   winType: string // 'opponentEliminated', 'bombExploded', 'bombDefused', 'timeExpired'
+  teamSides: TeamSide[] // Which side each team was on this round
   freezetimeEndedAt?: string // Timestamp when buy phase ended and combat started
   purchases: RoundPurchase[]
   abilityUsages: AbilityUsage[]
@@ -229,6 +247,7 @@ interface GameDataCollector {
   currentRoundBombDefuse: BombDefuse | null
   currentRoundFreezetimeEndedAt: string | null
   currentRoundCoordinates: CoordinateSnapshot[]
+  currentRoundTeamSides: TeamSide[]
   inRoundPhase: boolean // Track if we're between round-started-freezetime and team-won-round
 }
 
@@ -250,6 +269,30 @@ function parseValorantEventsFile(content: string): ValorantEventBatch[] {
   }
   
   return batches
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Normalize agent name for consistency (e.g., 'kay/o' -> 'kayo')
+ */
+function normalizeAgentName(name: string): string {
+  if (!name) return name
+  // Replace problematic characters
+  return name.replace(/\//g, '').toLowerCase()
+}
+
+/**
+ * Normalize agent display name (preserve case but fix special chars)
+ */
+function normalizeAgentDisplayName(name: string): string {
+  if (!name) return name
+  // Handle special cases
+  const normalized = name.toLowerCase()
+  if (normalized === 'kay/o') return 'KAY/O'
+  return name
 }
 
 // ============================================================================
@@ -279,8 +322,14 @@ export function convertValorantSeriesData(
   // Extract game data with rounds and purchases
   const games = extractGamesWithRounds(eventBatches, mapVeto)
   
+  // Get series start time from the first event batch or first map veto
+  const startedAt = mapVeto.length > 0 
+    ? mapVeto[0].occurredAt 
+    : (games.length > 0 ? games[0].startedAt : eventBatches[0].occurredAt)
+  
   return {
     seriesId,
+    startedAt,
     teams,
     mapVeto,
     games,
@@ -448,6 +497,8 @@ function extractGamesWithRounds(
       if (event.type === 'series-started-game') {
         // Save previous game if exists
         if (currentGame) {
+          // Compute player stats from rounds before saving
+          computePlayerStats(currentGame.players, currentGame.rounds)
           games.push({
             gameNumber: currentGame.gameNumber,
             mapId: currentGame.mapId,
@@ -458,33 +509,52 @@ function extractGamesWithRounds(
           })
         }
         
-        // Extract player characters from seriesState
+        // Extract player characters and map from seriesState
         const gamePlayers: GamePlayer[] = []
+        let mapFromState: string | null = null
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const seriesState = (event.actor as any)?.state || event.seriesState
         if (seriesState?.games?.length > 0) {
           const latestGame = seriesState.games[seriesState.games.length - 1]
+          
+          // Try to get map name from game state (prefer name over id since id is often a UUID)
+          if (latestGame?.map?.name) {
+            mapFromState = latestGame.map.name.toLowerCase()
+          } else if (latestGame?.map?.id && !latestGame.map.id.includes('-')) {
+            // Only use id if it's not a UUID (doesn't contain dashes)
+            mapFromState = latestGame.map.id.toLowerCase()
+          }
+          
           if (latestGame?.teams) {
             for (const team of latestGame.teams) {
               if (team?.players) {
                 for (const player of team.players) {
-                  if (player?.character) {
-                    gamePlayers.push({
-                      id: player.id,
-                      name: player.name,
-                      teamId: team.id,
-                      characterId: player.character.id || player.character.name?.toLowerCase() || 'unknown',
-                      characterName: player.character.name || player.character.id || 'Unknown',
-                    })
-                  }
+                  // Add all players, even if character data is not yet available
+                  // Character data will be updated from later events if needed
+                  gamePlayers.push({
+                    id: player.id,
+                    name: player.name,
+                    teamId: team.id,
+                    characterId: normalizeAgentName(player.character?.id || player.character?.name || '') || 'unknown',
+                    characterName: normalizeAgentDisplayName(player.character?.name || player.character?.id || '') || 'Unknown',
+                    stats: {
+                      kills: 0,
+                      deaths: 0,
+                      assists: 0,
+                      attackerKills: 0,
+                      attackerDeaths: 0,
+                      defenderKills: 0,
+                      defenderDeaths: 0,
+                    },
+                  })
                 }
               }
             }
           }
         }
         
-        // Start new game
-        const mapId = pickedMaps[gameIndex]?.mapId || 'unknown'
+        // Start new game - prefer map from state, then from veto, then unknown
+        const mapId = mapFromState || pickedMaps[gameIndex]?.mapId || 'unknown'
         currentGame = {
           gameNumber: gameIndex + 1,
           mapId,
@@ -500,6 +570,7 @@ function extractGamesWithRounds(
           currentRoundBombDefuse: null,
           currentRoundFreezetimeEndedAt: null,
           currentRoundCoordinates: [],
+          currentRoundTeamSides: [],
           inRoundPhase: false,
         }
         gameIndex++
@@ -518,6 +589,21 @@ function extractGamesWithRounds(
         currentGame.currentRoundFreezetimeEndedAt = null
         currentGame.currentRoundCoordinates = []
         currentGame.inRoundPhase = true
+        
+        // Extract team sides for this round
+        currentGame.currentRoundTeamSides = []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const roundState = event.actor?.state as any
+        if (roundState?.teams) {
+          for (const team of roundState.teams) {
+            if (team?.id && team?.side) {
+              currentGame.currentRoundTeamSides.push({
+                teamId: team.id,
+                side: team.side as 'attacker' | 'defender',
+              })
+            }
+          }
+        }
         
         // Capture initial coordinates at start of freezetime
         const coords = extractAllPlayerCoordinates(event)
@@ -551,6 +637,28 @@ function extractGamesWithRounds(
             time: new Date(batch.occurredAt).getTime(),
             playerCoordinates: coords,
           })
+        }
+        
+        // Update any players with unknown characters from later events
+        const games = event.seriesState?.games
+        if (games && games.length > 0) {
+          const latestGame = games[games.length - 1]
+          if (latestGame?.teams) {
+            for (const team of latestGame.teams) {
+              if (team?.players) {
+                for (const player of team.players) {
+                  if (player?.character?.name) {
+                    // Find matching player in currentGame.players and update if unknown
+                    const existingPlayer = currentGame.players.find(p => p.id === player.id)
+                    if (existingPlayer && (existingPlayer.characterId === 'unknown' || existingPlayer.characterName === 'Unknown')) {
+                      existingPlayer.characterId = normalizeAgentName(player.character.id || player.character.name)
+                      existingPlayer.characterName = normalizeAgentDisplayName(player.character.name)
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
       
@@ -648,6 +756,7 @@ function extractGamesWithRounds(
           winnerTeamId,
           winnerTeamName,
           winType,
+          teamSides: currentGame.currentRoundTeamSides,
           freezetimeEndedAt: currentGame.currentRoundFreezetimeEndedAt || undefined,
           purchases: currentGame.currentRoundPurchases,
           abilityUsages: currentGame.currentRoundAbilities,
@@ -661,6 +770,7 @@ function extractGamesWithRounds(
         currentGame.currentRoundPurchases = []
         currentGame.currentRoundAbilities = []
         currentGame.currentRoundKills = []
+        currentGame.currentRoundTeamSides = []
         currentGame.currentRoundBombPlant = null
         currentGame.currentRoundBombDefuse = null
         currentGame.currentRoundFreezetimeEndedAt = null
@@ -688,6 +798,8 @@ function extractGamesWithRounds(
   
   // Don't forget the last game
   if (currentGame) {
+    // Compute player stats from rounds before saving
+    computePlayerStats(currentGame.players, currentGame.rounds)
     games.push({
       gameNumber: currentGame.gameNumber,
       mapId: currentGame.mapId,
@@ -699,6 +811,52 @@ function extractGamesWithRounds(
   }
   
   return games
+}
+
+/**
+ * Compute player stats (kills, deaths, assists) from round data
+ */
+function computePlayerStats(players: GamePlayer[], rounds: ValorantRound[]): void {
+  // Create a map for quick player lookup
+  const playerMap = new Map<string, GamePlayer>()
+  for (const player of players) {
+    playerMap.set(player.id, player)
+  }
+  
+  // Process each round
+  for (const round of rounds) {
+    // Build a map of teamId -> side for this round
+    const teamSideMap = new Map<string, 'attacker' | 'defender'>()
+    for (const ts of round.teamSides) {
+      teamSideMap.set(ts.teamId, ts.side)
+    }
+    
+    // Process kills
+    for (const kill of round.kills) {
+      const killer = playerMap.get(kill.killerId)
+      const victim = playerMap.get(kill.victimId)
+      
+      if (killer) {
+        killer.stats.kills++
+        const killerSide = teamSideMap.get(killer.teamId)
+        if (killerSide === 'attacker') {
+          killer.stats.attackerKills++
+        } else if (killerSide === 'defender') {
+          killer.stats.defenderKills++
+        }
+      }
+      
+      if (victim) {
+        victim.stats.deaths++
+        const victimSide = teamSideMap.get(victim.teamId)
+        if (victimSide === 'attacker') {
+          victim.stats.attackerDeaths++
+        } else if (victimSide === 'defender') {
+          victim.stats.defenderDeaths++
+        }
+      }
+    }
+  }
 }
 
 /**

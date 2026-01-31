@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import Link from 'next/link'
 import styles from '../components/GamePageLayout.module.css'
 import TournamentSelector from '../components/TournamentSelector'
@@ -26,7 +27,9 @@ export default function LeagueOfLegendsPage() {
 
       <main className={styles.main}>
         <div className={styles.contentSection}>
-          <TournamentSelector game="lol" />
+          <Suspense fallback={<div>Loading...</div>}>
+            <TournamentSelector game="lol" />
+          </Suspense>
         </div>
       </main>
     </div>

@@ -81,7 +81,7 @@ async function fetchAllGamesForTeam(
       query GetTeamSeries($teamId: ID!, $after: String) {
         allSeries(
           filter: { teamId: $teamId }
-          first: 50
+          first: 20
           after: $after
           orderBy: StartTimeScheduled
           orderDirection: DESC
@@ -237,8 +237,8 @@ export async function POST(request: NextRequest) {
       return dateB - dateA
     })
 
-    // Limit to 50 most recent games
-    const limitedGames = uniqueGames.slice(0, 50)
+    // Limit to 20 most recent games
+    const limitedGames = uniqueGames.slice(0, 20)
 
     const responseData: GamesData = {
       games: limitedGames,

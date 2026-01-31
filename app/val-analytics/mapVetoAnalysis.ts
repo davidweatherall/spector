@@ -19,6 +19,12 @@ interface TeamMapVetoSequence {
   
   // Decider map (if auto-selected)
   deciderMap: string | null
+  
+  // All maps banned before our pick (both teams) - for availability calculation
+  allBansBeforeOurPick: string[]
+  
+  // All maps banned by opponent before our first ban - for first ban availability
+  opponentBansBeforeOurFirstBan: string[]
 }
 
 /**
@@ -129,6 +135,35 @@ function analyzeTeamMapVeto(
     return firstPickIndex !== -1 && banIndex > firstPickIndex
   })
   
+  // Find our first pick's index
+  const ourFirstPickIndex = mapVeto.findIndex(v => v.teamId === teamId && v.action === 'pick')
+  
+  // All bans (by both teams) that occurred before our first pick
+  const allBansBeforeOurPick: string[] = []
+  if (ourFirstPickIndex !== -1) {
+    for (let i = 0; i < ourFirstPickIndex; i++) {
+      if (mapVeto[i].action === 'ban') {
+        allBansBeforeOurPick.push(mapVeto[i].mapId)
+      }
+    }
+  } else {
+    // No picks, so all bans count
+    allBansBeforeOurPick.push(...mapVeto.filter(v => v.action === 'ban').map(v => v.mapId))
+  }
+  
+  // Find our first ban's index
+  const ourFirstBanIndex = mapVeto.findIndex(v => v.teamId === teamId && v.action === 'ban')
+  
+  // All opponent bans that occurred before our first ban
+  const opponentBansBeforeOurFirstBan: string[] = []
+  if (ourFirstBanIndex !== -1) {
+    for (let i = 0; i < ourFirstBanIndex; i++) {
+      if (mapVeto[i].action === 'ban' && mapVeto[i].teamId !== teamId) {
+        opponentBansBeforeOurFirstBan.push(mapVeto[i].mapId)
+      }
+    }
+  }
+  
   return {
     teamId,
     teamName,
@@ -136,6 +171,8 @@ function analyzeTeamMapVeto(
     pickActions: teamPicks,
     banPhase2Actions,
     deciderMap: decider?.mapId || null,
+    allBansBeforeOurPick,
+    opponentBansBeforeOurFirstBan,
   }
 }
 

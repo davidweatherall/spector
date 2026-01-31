@@ -23,6 +23,34 @@ interface MapAgentPicks {
 }
 
 /**
+ * Player stats for a game
+ */
+interface GamePlayerStats {
+  playerId: string
+  playerName: string
+  agentId: string
+  agentName: string
+  kills: number
+  deaths: number
+  attackerKills: number
+  attackerDeaths: number
+  defenderKills: number
+  defenderDeaths: number
+}
+
+/**
+ * Detailed game data
+ */
+interface GameDetail {
+  gameNumber: number
+  mapId: string
+  mapName: string
+  winnerTeamId: string | null
+  isWin: boolean
+  playerStats: GamePlayerStats[]
+}
+
+/**
  * Per-team agent pick analysis
  */
 interface TeamAgentAnalysis {
@@ -41,7 +69,12 @@ interface TeamAgentAnalysis {
     playerId: string
     playerName: string
     agentPicks: AgentFrequency[]
+    gamesPlayed: number
+    wins: number
   }[]
+  
+  // Detailed per-game data with player stats
+  gameDetails: GameDetail[]
 }
 
 /**
@@ -109,11 +142,13 @@ function analyzeTeamAgentPicks(
   // Collect all agent picks by this team across all games
   const allPicks: { agentId: string; agentName: string }[] = []
   const picksByMap: { [mapId: string]: { agentId: string; agentName: string }[] } = {}
-  const picksByPlayer: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string }[] } } = {}
+  const picksByPlayer: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string }[]; games: number; wins: number } } = {}
   const gamesByMap: { [mapId: string]: number } = {}
+  const gameDetails: GameDetail[] = []
   
   for (const game of games) {
     const mapId = game.mapId
+    const isWin = game.winnerTeamId === teamId
     
     // Track games per map
     gamesByMap[mapId] = (gamesByMap[mapId] || 0) + 1
@@ -125,6 +160,9 @@ function analyzeTeamAgentPicks(
     
     // Get players from this team in this game
     const teamPlayers = game.players.filter(p => p.teamId === teamId)
+    
+    // Collect player stats for this game
+    const gamePlayerStats: GamePlayerStats[] = []
     
     for (const player of teamPlayers) {
       const pickData = {
@@ -143,10 +181,40 @@ function analyzeTeamAgentPicks(
         picksByPlayer[player.id] = {
           playerName: player.name,
           picks: [],
+          games: 0,
+          wins: 0,
         }
       }
       picksByPlayer[player.id].picks.push(pickData)
+      picksByPlayer[player.id].games++
+      if (isWin) {
+        picksByPlayer[player.id].wins++
+      }
+      
+      // Add to game player stats
+      gamePlayerStats.push({
+        playerId: player.id,
+        playerName: player.name,
+        agentId: player.characterId,
+        agentName: player.characterName,
+        kills: player.stats?.kills || 0,
+        deaths: player.stats?.deaths || 0,
+        attackerKills: player.stats?.attackerKills || 0,
+        attackerDeaths: player.stats?.attackerDeaths || 0,
+        defenderKills: player.stats?.defenderKills || 0,
+        defenderDeaths: player.stats?.defenderDeaths || 0,
+      })
     }
+    
+    // Add game detail
+    gameDetails.push({
+      gameNumber: game.gameNumber,
+      mapId,
+      mapName: formatMapName(mapId),
+      winnerTeamId: game.winnerTeamId,
+      isWin,
+      playerStats: gamePlayerStats,
+    })
   }
   
   const totalMapsPlayed = games.length
@@ -170,6 +238,8 @@ function analyzeTeamAgentPicks(
       playerId,
       playerName: data.playerName,
       agentPicks: calculateAgentFrequencies(data.picks, data.picks.length),
+      gamesPlayed: data.games,
+      wins: data.wins,
     }))
     .sort((a, b) => a.playerName.localeCompare(b.playerName))
   
@@ -180,6 +250,7 @@ function analyzeTeamAgentPicks(
     overallAgentPicks,
     agentPicksByMap,
     playerAgentPreferences,
+    gameDetails,
   }
 }
 

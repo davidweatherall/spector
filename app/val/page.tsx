@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import Link from 'next/link'
 import styles from '../components/GamePageLayout.module.css'
 import TournamentSelector from '../components/TournamentSelector'
@@ -26,7 +27,9 @@ export default function ValorantPage() {
 
       <main className={styles.main}>
         <div className={styles.contentSection}>
-          <TournamentSelector game="valorant" />
+          <Suspense fallback={<div>Loading...</div>}>
+            <TournamentSelector game="valorant" />
+          </Suspense>
         </div>
       </main>
     </div>

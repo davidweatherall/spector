@@ -10,6 +10,7 @@ import ValorantMapPlayer from '../../../components/ValorantMapPlayer'
 // Valorant streamlined types
 interface ValorantStreamlinedSeries {
   seriesId: string
+  startedAt: string | null
   teams: ValorantTeam[]
   mapVeto: MapVetoAction[]
   games: ValorantGame[]
@@ -276,6 +277,16 @@ export default function ValorantSeriesPage() {
                   {seriesData.teams.map(t => t.name).join(' vs ')}
                 </h2>
                 <div className={styles.seriesMeta}>
+                  {seriesData.startedAt && (
+                    <span>{new Date(seriesData.startedAt).toLocaleDateString('en-US', { 
+                      weekday: 'short',
+                      year: 'numeric', 
+                      month: 'short', 
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}</span>
+                  )}
                   <span>Series ID: {seriesData.seriesId}</span>
                   <span>Maps: {seriesData.games.length}</span>
                 </div>

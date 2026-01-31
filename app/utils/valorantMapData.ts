@@ -48,12 +48,12 @@ export interface ValorantMapData {
   // Custom adjustments to fine-tune positioning for our map images (optional)
   // Offsets are added to final position (e.g., xOffset: -5 shifts left 5%)
   // Scale adjusts spread around center (e.g., xScale: 0.9 pulls positions 10% toward center)
-  // Rotate: if true, applies 180deg rotation to map container
+  // Rotate: degrees to rotate the map container (e.g., 180 for 180deg rotation)
   xOffset?: number
   yOffset?: number
   xScale?: number
   yScale?: number
-  rotate?: boolean
+  rotate?: number
 }
 
 export interface MapCoordinateConfig {
@@ -75,7 +75,7 @@ export interface MapAdjustment {
   yOffset: number
   xScale: number   // Scales positions around center (1.0 = no change, 0.9 = 10% closer to center)
   yScale: number
-  rotate: boolean  // If true, apply 180deg rotation to map container
+  rotate: number   // Degrees to rotate map container (0 = no rotation, 180 = flip)
 }
 
 // ============================================================================
@@ -146,7 +146,7 @@ export function getMapAdjustment(mapName: string): MapAdjustment {
     yOffset: map?.yOffset ?? 0,
     xScale: map?.xScale ?? 1.0,
     yScale: map?.yScale ?? 1.0,
-    rotate: map?.rotate ?? false,
+    rotate: map?.rotate ?? 0,
   }
 }
 
@@ -283,4 +283,35 @@ export function gameToPercent(
     xPercent: normalizedX * 100,
     yPercent: normalizedY * 100,
   }
+}
+
+/**
+ * Find the closest callout to given coordinates
+ * Returns the callout name as "SuperRegionName: RegionName" or null if no callouts
+ */
+export function getClosestCallout(
+  mapName: string,
+  x: number,
+  y: number
+): string | null {
+  const map = getMapByName(mapName)
+  if (!map || !map.callouts || map.callouts.length === 0) {
+    return null
+  }
+  
+  let closestCallout = map.callouts[0]
+  let closestDistance = Infinity
+  
+  for (const callout of map.callouts) {
+    const dx = callout.location.x - x
+    const dy = callout.location.y - y
+    const distance = Math.sqrt(dx * dx + dy * dy)
+    
+    if (distance < closestDistance) {
+      closestDistance = distance
+      closestCallout = callout
+    }
+  }
+  
+  return `${closestCallout.superRegionName}: ${closestCallout.regionName}`
 }

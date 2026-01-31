@@ -1,12 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useGridData, Tournament, Team } from '../contexts/GridDataContext'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { getChampionImagePath } from '../utils/championMapping'
 import styles from './TournamentSelector.module.css'
+
+// Helper to get Valorant agent image path
+const getAgentImagePath = (agentName: string): string => {
+  // Normalize: lowercase and remove special chars (e.g., 'kay/o' -> 'kayo')
+  const lowerName = agentName.toLowerCase().replace(/[^a-z]/g, '')
+  return `/agents/${lowerName}.png`
+}
 
 interface TournamentSelectorProps {
   game: 'lol' | 'valorant'
@@ -28,6 +36,79 @@ interface ScoutingReport {
   seriesBreakdown: any[]
 }
 
+interface ValorantScoutingReport {
+  teamId: string
+  teamName: string
+  seriesAnalyzed: number
+  mapsPlayed: number
+  generatedAt: string
+  mapVetoStats: {
+    banPhase1: {
+      ban1: { mapId: string; mapName: string; count: number; available: number; percentage: number }[]
+      ban2: { mapId: string; mapName: string; count: number; percentage: number }[]
+      allBans: { mapId: string; mapName: string; count: number; percentage: number }[]
+    }
+    mapPicks: {
+      pick1: { mapId: string; mapName: string; count: number; percentage: number }[]
+      pick2: { mapId: string; mapName: string; count: number; percentage: number }[]
+      allPicks: { mapId: string; mapName: string; count: number; available: number; percentage: number }[]
+    }
+    banPhase2: {
+      allBans: { mapId: string; mapName: string; count: number; percentage: number }[]
+    } | null
+    deciderMaps: { mapId: string; mapName: string; count: number; percentage: number }[]
+  } | null
+  agentStats: {
+    overallPicks: { agentId: string; agentName: string; count: number; totalGames: number; percentage: number }[]
+    picksByMap: {
+      mapId: string
+      mapName: string
+      gamesPlayed: number
+      agentPicks: { agentId: string; agentName: string; count: number; percentage: number }[]
+    }[]
+    playerPreferences: {
+      playerId: string
+      playerName: string
+      totalMapsPlayed: number
+      wins: number
+      winPercentage: number
+      agentPicks: { agentId: string; agentName: string; count: number; percentage: number }[]
+    }[]
+  } | null
+  seriesBreakdown: {
+    seriesId: string
+    opponent: string
+    date: string
+    mapsPlayed: number
+    mapVeto: {
+      sequenceNumber: number
+      action: 'ban' | 'pick' | 'decider'
+      mapId: string
+      teamId: string | null
+      teamName: string | null
+      isOurTeam: boolean
+    }[]
+    games: {
+      gameNumber: number
+      mapId: string
+      winnerTeamId: string | null
+      isWin: boolean
+      ourAgents: {
+        playerId: string
+        playerName: string
+        agentId: string
+        agentName: string
+        kills: number
+        deaths: number
+        attackerKills: number
+        attackerDeaths: number
+        defenderKills: number
+        defenderDeaths: number
+      }[]
+    }[]
+  }[]
+}
+
 export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [isGamesExpanded, setIsGamesExpanded] = useState(true)
@@ -37,7 +118,9 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const [currentAnalyzingId, setCurrentAnalyzingId] = useState<string | null>(null)
   const [completedSeriesIds, setCompletedSeriesIds] = useState<Set<string>>(new Set())
   const [scoutingReport, setScoutingReport] = useState<ScoutingReport | null>(null)
+  const [valScoutingReport, setValScoutingReport] = useState<ValorantScoutingReport | null>(null)
   const [scoutingError, setScoutingError] = useState<string | null>(null)
+  const [selectedValMapTab, setSelectedValMapTab] = useState<string | null>(null)
   const [selectedGoldLeadRole, setSelectedGoldLeadRole] = useState<'top' | 'jungle' | 'mid' | 'bot' | 'support'>('mid')
   const [selectedCounterPickTab, setSelectedCounterPickTab] = useState<'top-cp' | 'top-cpd' | 'mid-cp' | 'mid-cpd'>('mid-cp')
   const [selectedBanPhasePickSide, setSelectedBanPhasePickSide] = useState<'first' | 'second'>('first')
@@ -101,6 +184,91 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const gamesError = game === 'lol' ? lolGamesError : valGamesError
   const fetchGames = game === 'lol' ? fetchLolGames : fetchValGames
 
+  // URL param handling
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [hasRestoredFromUrl, setHasRestoredFromUrl] = useState(false)
+
+  // Update URL params when state changes
+  const updateUrlParams = useCallback(() => {
+    const params = new URLSearchParams()
+    
+    if (selectedLeagues.length > 0) {
+      params.set('leagues', selectedLeagues.join(','))
+    }
+    if (selectedTournaments.length > 0) {
+      params.set('tournaments', selectedTournaments.map(t => t.id).join(','))
+    }
+    if (selectedTeam) {
+      params.set('team', selectedTeam.id)
+      params.set('teamName', selectedTeam.name)
+    }
+    
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname
+    window.history.replaceState({}, '', newUrl)
+  }, [selectedLeagues, selectedTournaments, selectedTeam])
+
+  // Restore state from URL params on mount
+  useEffect(() => {
+    if (hasRestoredFromUrl || !data) return
+    
+    const leaguesParam = searchParams.get('leagues')
+    const tournamentsParam = searchParams.get('tournaments')
+    const teamParam = searchParams.get('team')
+    const teamNameParam = searchParams.get('teamName')
+    
+    // Restore leagues
+    if (leaguesParam) {
+      const leagues = leaguesParam.split(',')
+      for (const league of leagues) {
+        if (!selectedLeagues.includes(league)) {
+          toggleLeague(league)
+        }
+      }
+    }
+    
+    // Restore tournaments
+    if (tournamentsParam && data) {
+      const tournamentIds = tournamentsParam.split(',')
+      for (const id of tournamentIds) {
+        // Find tournament in data
+        for (const league of Object.values(data)) {
+          if (!league?.tournaments) continue
+          const tournament = league.tournaments.find((t: Tournament) => t.id === id)
+          if (tournament && !selectedTournaments.some(t => t.id === id)) {
+            toggleTournament(tournament)
+          }
+        }
+      }
+    }
+    
+    // Restore team (we need to fetch teams first if not loaded)
+    if (teamParam && teamNameParam) {
+      // If tournaments are selected but teams not loaded, fetch them
+      if (selectedTournaments.length > 0 && teams.length === 0 && !teamsLoading) {
+        fetchTeams()
+      }
+      // If teams are loaded, find and select the team
+      if (teams.length > 0) {
+        const team = teams.find(t => t.id === teamParam)
+        if (team && (!selectedTeam || selectedTeam.id !== team.id)) {
+          setSelectedTeam(team)
+        }
+      }
+    }
+    
+    if (leaguesParam || tournamentsParam || teamParam) {
+      setHasRestoredFromUrl(true)
+    }
+  }, [data, searchParams, hasRestoredFromUrl, selectedLeagues, selectedTournaments, toggleLeague, toggleTournament, teams, teamsLoading, fetchTeams, selectedTeam, setSelectedTeam])
+
+  // Update URL when selections change (after initial restore)
+  useEffect(() => {
+    if (hasRestoredFromUrl || (selectedLeagues.length > 0 || selectedTournaments.length > 0 || selectedTeam)) {
+      updateUrlParams()
+    }
+  }, [selectedLeagues, selectedTournaments, selectedTeam, hasRestoredFromUrl, updateUrlParams])
+
   useEffect(() => {
     if (!data && !loading && !error) {
       fetchData()
@@ -123,9 +291,11 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
     if (selectedTeam?.id === team.id) {
       setSelectedTeam(null)
       setScoutingReport(null)
+      setValScoutingReport(null)
     } else {
       setSelectedTeam(team)
       setScoutingReport(null)
+      setValScoutingReport(null)
     }
     // Reset analyzing state when switching teams
     setCompletedSeriesIds(new Set())
@@ -139,16 +309,19 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
     }
   }, [selectedTeam?.id])
 
-  const handleGenerateScoutingReport = async () => {
+  const handleGenerateScoutingReport = async (limit?: number) => {
     if (!selectedTeam || games.length === 0) return
     
     // Close filters panel when generating report
     setIsExpanded(false)
     
+    // Apply limit if specified
+    const gamesToAnalyze = limit ? games.slice(0, limit) : games
+    
     setScoutingLoading(true)
     setScoutingError(null)
     setScoutingProgress(0)
-    setScoutingTotal(games.length)
+    setScoutingTotal(gamesToAnalyze.length)
     setCompletedSeriesIds(new Set())
     setCurrentAnalyzingId(null)
     
@@ -156,8 +329,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
       // Process each series one by one to show progress
       const seriesList: { id: string; opponent: string; date: string }[] = []
       
-      for (let i = 0; i < games.length; i++) {
-        const gameItem = games[i]
+      for (let i = 0; i < gamesToAnalyze.length; i++) {
+        const gameItem = gamesToAnalyze[i]
         setCurrentAnalyzingId(gameItem.id)
         setScoutingProgress(i)
         
@@ -174,7 +347,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
           const result = await analyzeResponse.json()
           
           // Only delay if it was a cache miss (made external API calls)
-          if (!result.cacheHit && i < games.length - 1) {
+          if (!result.cacheHit && i < gamesToAnalyze.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 500))
           }
         }
@@ -190,7 +363,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
       }
       
       setCurrentAnalyzingId(null)
-      setScoutingProgress(games.length)
+      setScoutingProgress(gamesToAnalyze.length)
       
       // Now aggregate all analytics into the report
       const response = await fetch('/api/scouting-report', {
@@ -212,6 +385,94 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
       setScoutingReport(data.report)
     } catch (error) {
       console.error('Error generating scouting report:', error)
+      setScoutingError(error instanceof Error ? error.message : 'Unknown error')
+    } finally {
+      setScoutingLoading(false)
+      setCurrentAnalyzingId(null)
+    }
+  }
+
+  const handleGenerateValScoutingReport = async (limit?: number) => {
+    if (!selectedTeam || games.length === 0) return
+    
+    // Close filters panel when generating report
+    setIsExpanded(false)
+    
+    // Apply limit if specified
+    const gamesToAnalyze = limit ? games.slice(0, limit) : games
+    
+    setScoutingLoading(true)
+    setScoutingError(null)
+    setScoutingProgress(0)
+    setScoutingTotal(gamesToAnalyze.length)
+    setCompletedSeriesIds(new Set())
+    setCurrentAnalyzingId(null)
+    
+    try {
+      // Process each series one by one to show progress
+      const seriesList: { seriesId: string; opponent: string; date: string }[] = []
+      
+      for (let i = 0; i < gamesToAnalyze.length; i++) {
+        const gameItem = gamesToAnalyze[i]
+        setCurrentAnalyzingId(gameItem.id)
+        setScoutingProgress(i)
+        
+        // Call Valorant API to analyze this series (will convert if needed)
+        const analyzeResponse = await fetch('/api/val/scouting-report/analyze-series', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ seriesId: gameItem.id }),
+        })
+        
+        if (!analyzeResponse.ok) {
+          console.error(`Failed to analyze Valorant series ${gameItem.id}`)
+        } else {
+          const result = await analyzeResponse.json()
+          
+          // Only delay if it was a cache miss (made external API calls)
+          if (!result.cacheHit && i < gamesToAnalyze.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }
+        
+        seriesList.push({
+          seriesId: gameItem.id,
+          opponent: gameItem.opponent?.name || 'Unknown',
+          date: gameItem.date || '',
+        })
+        
+        // Mark as completed
+        setCompletedSeriesIds(prev => new Set([...prev, gameItem.id]))
+      }
+      
+      setCurrentAnalyzingId(null)
+      setScoutingProgress(gamesToAnalyze.length)
+      
+      // Now aggregate all analytics into the Valorant report
+      const response = await fetch('/api/val/scouting-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamId: selectedTeam.id,
+          teamName: selectedTeam.name,
+          seriesIds: seriesList,
+        }),
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to generate Valorant report')
+      }
+      
+      const data = await response.json()
+      setValScoutingReport(data.report)
+      
+      // Set default map tab if there are maps
+      if (data.report?.agentStats?.picksByMap?.length > 0) {
+        setSelectedValMapTab(data.report.agentStats.picksByMap[0].mapId)
+      }
+    } catch (error) {
+      console.error('Error generating Valorant scouting report:', error)
       setScoutingError(error instanceof Error ? error.message : 'Unknown error')
     } finally {
       setScoutingLoading(false)
@@ -426,22 +687,27 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
               <span className={styles.gamesCount}>{games.length} Games Found</span>
             ) : null}
           </div>
-          {game === 'lol' && (
-            <div className={styles.teamActionsButtons}>
-              <button
-                className={`${styles.scoutingButton} ${scoutingLoading ? styles.scoutingButtonLoading : ''}`}
-                onClick={handleGenerateScoutingReport}
-                disabled={scoutingLoading || games.length === 0}
-              >
-                {scoutingLoading ? 'Generating...' : 'Generate Scouting Report'}
-              </button>
-            </div>
-          )}
+          <div className={styles.teamActionsButtons}>
+            <button
+              className={`${styles.scoutingButton} ${styles.scoutingButtonQuick} ${scoutingLoading ? styles.scoutingButtonLoading : ''} ${game === 'valorant' ? styles.scoutingButtonVal : ''}`}
+              onClick={() => game === 'lol' ? handleGenerateScoutingReport(5) : handleGenerateValScoutingReport(5)}
+              disabled={scoutingLoading || games.length === 0}
+            >
+              {scoutingLoading ? 'Generating...' : 'Quick Report (5 Games)'}
+            </button>
+            <button
+              className={`${styles.scoutingButton} ${scoutingLoading ? styles.scoutingButtonLoading : ''} ${game === 'valorant' ? styles.scoutingButtonVal : ''}`}
+              onClick={() => game === 'lol' ? handleGenerateScoutingReport() : handleGenerateValScoutingReport()}
+              disabled={scoutingLoading || games.length === 0}
+            >
+              {scoutingLoading ? 'Generating...' : `Full Report (${games.length} Games)`}
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Scouting Report Panel - LoL only */}
-      {game === 'lol' && scoutingLoading && (
+      {/* Scouting Report Loading Panel */}
+      {scoutingLoading && (
         <div className={styles.scoutingPanel}>
           <div className={styles.scoutingProgress}>
             <div className={styles.scoutingProgressTitle}>
@@ -460,7 +726,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
         </div>
       )}
 
-      {game === 'lol' && scoutingError && (
+      {scoutingError && (
         <div className={styles.scoutingPanel}>
           <div className={styles.error} style={{ padding: '1rem' }}>
             Error: {scoutingError}
@@ -1338,6 +1604,240 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
         </div>
       )}
 
+      {/* Valorant Scouting Report Panel */}
+      {game === 'valorant' && valScoutingReport && !scoutingLoading && (
+        <div className={`${styles.scoutingPanel} ${styles.scoutingPanelVal}`}>
+          <div className={styles.scoutingPanelHeader}>
+            <h3 className={styles.scoutingPanelTitle}>
+              Scouting Report: {valScoutingReport.teamName}
+              <span className={styles.gamesCount}>
+                {valScoutingReport.seriesAnalyzed} Series · {valScoutingReport.mapsPlayed} Maps
+              </span>
+            </h3>
+          </div>
+          
+          {/* Map Veto Analysis - only show if there's actual data */}
+          {valScoutingReport.mapVetoStats && (
+            valScoutingReport.mapVetoStats.banPhase1.ban1.some(b => b.percentage > 0) ||
+            valScoutingReport.mapVetoStats.mapPicks.allPicks.some(p => p.percentage > 0)
+          ) && (
+            <div className={styles.valMapVetoSection}>
+              <div className={styles.pickBanHeader}>
+                <h4 className={styles.pickBanTitle}>Map Veto Analysis</h4>
+              </div>
+              
+              <div className={styles.valVetoGrid}>
+                {/* Ban Phase 1 - First Ban When Available % */}
+                <div className={styles.valVetoColumn}>
+                  <div className={styles.valVetoColumnHeader}>First Ban When Available %</div>
+                  <div className={styles.valVetoList}>
+                    {valScoutingReport.mapVetoStats.banPhase1.ban1.filter(b => b.percentage > 0).slice(0, 7).map((ban) => (
+                      <div key={ban.mapId} className={styles.valVetoItem}>
+                        <span className={styles.valVetoMapName}>{ban.mapName}</span>
+                        <div className={styles.valVetoBar}>
+                          <div 
+                            className={`${styles.valVetoBarFill} ${styles.valVetoBan}`}
+                            style={{ width: `${ban.percentage}%` }}
+                          />
+                        </div>
+                        <span className={styles.valVetoPercent} title={`${ban.count}/${ban.available} available`}>
+                          {Math.round(ban.percentage)}% ({ban.available})
+                        </span>
+                      </div>
+                    ))}
+                    {valScoutingReport.mapVetoStats.banPhase1.ban1.filter(b => b.percentage > 0).length === 0 && (
+                      <span className={styles.noDataText}>No data</span>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Map Picks - Pick When Available % */}
+                <div className={styles.valVetoColumn}>
+                  <div className={styles.valVetoColumnHeader}>Pick When Available %</div>
+                  <div className={styles.valVetoList}>
+                    {valScoutingReport.mapVetoStats.mapPicks.allPicks.filter(p => p.percentage > 0).slice(0, 7).map((pick) => (
+                      <div key={pick.mapId} className={styles.valVetoItem}>
+                        <span className={styles.valVetoMapName}>{pick.mapName}</span>
+                        <div className={styles.valVetoBar}>
+                          <div 
+                            className={`${styles.valVetoBarFill} ${styles.valVetoPick}`}
+                            style={{ width: `${pick.percentage}%` }}
+                          />
+                        </div>
+                        <span className={styles.valVetoPercent} title={`${pick.count}/${pick.available} available`}>
+                          {Math.round(pick.percentage)}% ({pick.available})
+                        </span>
+                      </div>
+                    ))}
+                    {valScoutingReport.mapVetoStats.mapPicks.allPicks.filter(p => p.percentage > 0).length === 0 && (
+                      <span className={styles.noDataText}>No data</span>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Ban Phase 2 (if exists) */}
+                {valScoutingReport.mapVetoStats.banPhase2 && (
+                  <div className={styles.valVetoColumn}>
+                    <div className={styles.valVetoColumnHeader}>Second Bans</div>
+                    <div className={styles.valVetoList}>
+                      {valScoutingReport.mapVetoStats.banPhase2.allBans.slice(0, 7).map((ban) => (
+                        <div key={ban.mapId} className={styles.valVetoItem}>
+                          <span className={styles.valVetoMapName}>{ban.mapName}</span>
+                          <div className={styles.valVetoBar}>
+                            <div 
+                              className={`${styles.valVetoBarFill} ${styles.valVetoBan}`}
+                              style={{ width: `${ban.percentage}%` }}
+                            />
+                          </div>
+                          <span className={styles.valVetoPercent}>{Math.round(ban.percentage)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Agent Pick Analysis */}
+          {valScoutingReport.agentStats && (
+            <div className={styles.valAgentSection}>
+              <div className={styles.pickBanHeader}>
+                <h4 className={styles.pickBanTitle}>Agent Pick Patterns</h4>
+              </div>
+              
+              {/* Overall Agent Picks */}
+              <div className={styles.valAgentOverall}>
+                <div className={styles.banSectionLabel}>Overall Agent Picks ({valScoutingReport.mapsPlayed} maps)</div>
+                <div className={styles.valAgentGrid}>
+                  {valScoutingReport.agentStats.overallPicks.slice(0, 12).map((agent) => (
+                    <div key={agent.agentId} className={styles.valAgentCard}>
+                      <Image
+                        src={getAgentImagePath(agent.agentName)}
+                        alt={agent.agentName}
+                        width={36}
+                        height={36}
+                        className={styles.valAgentImage}
+                        unoptimized
+                      />
+                      <div className={styles.valAgentInfo}>
+                        <span className={styles.valAgentName}>{agent.agentName}</span>
+                        <span className={styles.valAgentStats}>
+                          {Math.round(agent.percentage)}% ({agent.count}/{agent.totalGames})
+                        </span>
+                      </div>
+                      <div className={styles.valAgentBarContainer}>
+                        <div 
+                          className={styles.valAgentBar}
+                          style={{ width: `${agent.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Agent Picks by Map */}
+              {valScoutingReport.agentStats.picksByMap.length > 0 && (
+                <div className={styles.valAgentByMap}>
+                  <div className={styles.banSectionLabel}>Agent Picks by Map</div>
+                  
+                  {/* Map Tabs */}
+                  <div className={styles.valMapTabs}>
+                    {valScoutingReport.agentStats.picksByMap.map((mapData) => (
+                      <button
+                        key={mapData.mapId}
+                        className={`${styles.valMapTab} ${selectedValMapTab === mapData.mapId ? styles.valMapTabActive : ''}`}
+                        onClick={() => setSelectedValMapTab(mapData.mapId)}
+                      >
+                        {mapData.mapName}
+                        <span className={styles.valMapTabCount}>({mapData.gamesPlayed})</span>
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Selected Map Agent Picks */}
+                  {selectedValMapTab && (() => {
+                    const selectedMapData = valScoutingReport.agentStats?.picksByMap.find(
+                      (m) => m.mapId === selectedValMapTab
+                    )
+                    if (!selectedMapData) return null
+                    
+                    return (
+                      <div className={styles.valAgentMapContent}>
+                        <div className={styles.valAgentGrid}>
+                          {selectedMapData.agentPicks.slice(0, 10).map((agent) => (
+                            <div key={agent.agentId} className={styles.valAgentCard}>
+                              <Image
+                                src={getAgentImagePath(agent.agentName)}
+                                alt={agent.agentName}
+                                width={36}
+                                height={36}
+                                className={styles.valAgentImage}
+                                unoptimized
+                              />
+                              <div className={styles.valAgentInfo}>
+                                <span className={styles.valAgentName}>{agent.agentName}</span>
+                                <span className={styles.valAgentStats}>
+                                  {Math.round(agent.percentage)}% ({agent.count} picks)
+                                </span>
+                              </div>
+                              <div className={styles.valAgentBarContainer}>
+                                <div 
+                                  className={styles.valAgentBar}
+                                  style={{ width: `${agent.percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
+              
+              {/* Player Agent Preferences */}
+              {valScoutingReport.agentStats.playerPreferences.length > 0 && (
+                <div className={styles.valPlayerPrefs}>
+                  <div className={styles.banSectionLabel}>Player Agent Preferences</div>
+                  <div className={styles.valPlayerTable}>
+                    <div className={styles.valPlayerTableHeader}>
+                      <span className={styles.valPlayerColPlayer}>Player</span>
+                      <span className={styles.valPlayerColMaps}>Maps</span>
+                      <span className={styles.valPlayerColWin}>Win %</span>
+                      <span className={styles.valPlayerColAgents}>Top Agents</span>
+                    </div>
+                    {valScoutingReport.agentStats.playerPreferences.map((player) => (
+                      <div key={player.playerId} className={styles.valPlayerRow}>
+                        <span className={styles.valPlayerColPlayer}>{player.playerName}</span>
+                        <span className={styles.valPlayerColMaps}>{player.totalMapsPlayed}</span>
+                        <span className={styles.valPlayerColWin}>{Math.round(player.winPercentage)}%</span>
+                        <div className={styles.valPlayerColAgents}>
+                          {player.agentPicks.slice(0, 4).map((agent) => (
+                            <div key={agent.agentId} className={styles.valPlayerAgentChip}>
+                              <Image
+                                src={getAgentImagePath(agent.agentName)}
+                                alt={agent.agentName}
+                                width={20}
+                                height={20}
+                                className={styles.valPlayerAgentImg}
+                                unoptimized
+                              />
+                              <span className={styles.valPlayerAgentPercent}>{Math.round(agent.percentage)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Games List Panel - Below Scouting Report */}
       {selectedTeam && games.length > 0 && (
         <div className={styles.gamesPanel}>
@@ -1459,6 +1959,73 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                         })}
                       </div>
                     )}
+                    
+                    {/* Valorant match details */}
+                    {game === 'valorant' && (() => {
+                      const valSeriesData = valScoutingReport?.seriesBreakdown?.find(
+                        (s) => s.seriesId === gameItem.id
+                      )
+                      if (!valSeriesData || valSeriesData.games.length === 0) return null
+                      
+                      return (
+                        <div className={styles.valMatchDetails}>
+                          {/* Map Veto Sequence */}
+                          {valSeriesData.mapVeto.length > 0 && (
+                            <div className={styles.valVetoSequence}>
+                              <span className={styles.valVetoLabel}>Veto:</span>
+                              {valSeriesData.mapVeto.map((veto, idx) => (
+                                <span 
+                                  key={idx} 
+                                  className={`${styles.valVetoChip} ${veto.action === 'ban' ? styles.valVetoBanChip : veto.action === 'pick' ? styles.valVetoPickChip : styles.valVetoDeciderChip} ${veto.isOurTeam ? styles.valVetoOurs : ''}`}
+                                  title={`${veto.teamName || 'Auto'} ${veto.action}`}
+                                >
+                                  {veto.mapId.charAt(0).toUpperCase() + veto.mapId.slice(1)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* Games with agents and stats */}
+                          {valSeriesData.games.map((gameData) => (
+                            <div key={gameData.gameNumber} className={styles.valGameRow}>
+                              <div className={styles.valGameHeader}>
+                                <span className={styles.valGameMap}>
+                                  {gameData.mapId.charAt(0).toUpperCase() + gameData.mapId.slice(1)}
+                                </span>
+                                <span className={`${styles.valGameResult} ${gameData.isWin ? styles.valWin : styles.valLoss}`}>
+                                  {gameData.isWin ? 'W' : 'L'}
+                                </span>
+                              </div>
+                              <div className={styles.valPlayerStats}>
+                                {gameData.ourAgents.map((agent) => (
+                                  <div key={agent.playerId} className={styles.valPlayerStatRow}>
+                                    <Image
+                                      src={getAgentImagePath(agent.agentName)}
+                                      alt={agent.agentName}
+                                      width={24}
+                                      height={24}
+                                      className={styles.valStatAgentImg}
+                                      unoptimized
+                                    />
+                                    <span className={styles.valStatPlayerName}>{agent.playerName}</span>
+                                    <span className={styles.valStatKD}>
+                                      <span className={styles.valStatKills}>K: {agent.kills}</span>
+                                      <span className={styles.valStatDeaths}>D: {agent.deaths}</span>
+                                    </span>
+                                    <span className={`${styles.valStatSide} ${styles.valStatAttack}`} title="Attack K/D">
+                                      <span className={styles.valStatKills}>{agent.attackerKills}</span>/<span className={styles.valStatDeaths}>{agent.attackerDeaths}</span>
+                                    </span>
+                                    <span className={`${styles.valStatSide} ${styles.valStatDefend}`} title="Defense K/D">
+                                      <span className={styles.valStatKills}>{agent.defenderKills}</span>/<span className={styles.valStatDeaths}>{agent.defenderDeaths}</span>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )
               })}

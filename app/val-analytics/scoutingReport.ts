@@ -80,6 +80,8 @@ export interface ValorantScoutingReport {
       playerId: string
       playerName: string
       totalMapsPlayed: number
+      wins: number
+      winPercentage: number
       agentPicks: AgentFrequency[]
     }[]
   } | null
@@ -103,7 +105,18 @@ export interface ValorantScoutingReport {
       mapId: string
       winnerTeamId: string | null
       isWin: boolean
-      ourAgents: { playerId: string; playerName: string; agentId: string; agentName: string }[]
+      ourAgents: {
+        playerId: string
+        playerName: string
+        agentId: string
+        agentName: string
+        kills: number
+        deaths: number
+        attackerKills: number
+        attackerDeaths: number
+        defenderKills: number
+        defenderDeaths: number
+      }[]
     }[]
   }[]
 }
@@ -159,6 +172,44 @@ function calculateMapFrequencies(mapIds: string[], totalOpportunities: number): 
       count,
       available: totalOpportunities,
       percentage: totalOpportunities > 0 ? (count / totalOpportunities) * 100 : 0,
+    }))
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 10)
+}
+
+/**
+ * Calculate "pick when available %" - percentage of times a map was picked when not banned
+ */
+function calculatePickWhenAvailableFrequencies(
+  availability: { [mapId: string]: { available: number; picked: number } }
+): MapFrequency[] {
+  return Object.entries(availability)
+    .filter(([_, stats]) => stats.available > 0) // Only include maps that were available at least once
+    .map(([mapId, stats]) => ({
+      mapId,
+      mapName: formatMapName(mapId),
+      count: stats.picked,
+      available: stats.available,
+      percentage: stats.available > 0 ? (stats.picked / stats.available) * 100 : 0,
+    }))
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 10)
+}
+
+/**
+ * Calculate "first ban when available %" - percentage of times a map was first-banned when not already banned by opponent
+ */
+function calculateFirstBanWhenAvailableFrequencies(
+  availability: { [mapId: string]: { available: number; banned: number } }
+): MapFrequency[] {
+  return Object.entries(availability)
+    .filter(([_, stats]) => stats.available > 0) // Only include maps that were available at least once
+    .map(([mapId, stats]) => ({
+      mapId,
+      mapName: formatMapName(mapId),
+      count: stats.banned,
+      available: stats.available,
+      percentage: stats.available > 0 ? (stats.banned / stats.available) * 100 : 0,
     }))
     .sort((a, b) => b.percentage - a.percentage)
     .slice(0, 10)
@@ -221,11 +272,19 @@ export function aggregateValorantScoutingReport(
   const allDeciders: string[] = []
   let seriesWithBanPhase2 = 0
   
+  // Track map availability for "pick when available %" calculation
+  // For each map: { available: number (times not banned before our pick), picked: number }
+  const mapPickAvailability: { [mapId: string]: { available: number; picked: number } } = {}
+  
+  // Track map availability for "first ban when available %" calculation
+  // For each map: { available: number (times not banned by opponent before our first ban), banned: number }
+  const mapFirstBanAvailability: { [mapId: string]: { available: number; banned: number } } = {}
+  
   // Collect agent pick data
   const allAgentPicks: { agentId: string; agentName: string }[] = []
   const agentPicksByMap: { [mapId: string]: { agentId: string; agentName: string }[] } = {}
   const gamesByMap: { [mapId: string]: number } = {}
-  const playerPicks: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string }[]; games: number } } = {}
+  const playerPicks: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string }[]; games: number; wins: number } } = {}
   
   // Process each series' analytics
   for (const result of analyticsResults) {
@@ -249,6 +308,46 @@ export function aggregateValorantScoutingReport(
             allBanPhase1_All.push(action.mapId)
           }
           
+          // Track first ban availability for "first ban when available %" calculation
+          // Get opponent bans that occurred before our first ban
+          const opponentBansBeforeOurs = new Set(seq.opponentBansBeforeOurFirstBan || [])
+          const ourFirstBan = seq.banPhase1Actions?.[0]?.mapId
+          
+          // Get all maps we've seen in veto to track availability
+          const allMapsForBanAvailability = new Set<string>()
+          for (const action of seq.banPhase1Actions || []) {
+            allMapsForBanAvailability.add(action.mapId)
+          }
+          for (const action of seq.pickActions || []) {
+            allMapsForBanAvailability.add(action.mapId)
+          }
+          for (const action of seq.banPhase2Actions || []) {
+            allMapsForBanAvailability.add(action.mapId)
+          }
+          if (seq.deciderMap) {
+            allMapsForBanAvailability.add(seq.deciderMap)
+          }
+          for (const mapId of opponentBansBeforeOurs) {
+            allMapsForBanAvailability.add(mapId)
+          }
+          
+          // For each known map, track if it was available for our first ban
+          for (const mapId of Array.from(allMapsForBanAvailability)) {
+            if (!mapFirstBanAvailability[mapId]) {
+              mapFirstBanAvailability[mapId] = { available: 0, banned: 0 }
+            }
+            
+            // Map is available if opponent didn't ban it before our first ban
+            if (!opponentBansBeforeOurs.has(mapId)) {
+              mapFirstBanAvailability[mapId].available++
+              
+              // Check if we banned it as our first ban
+              if (ourFirstBan === mapId) {
+                mapFirstBanAvailability[mapId].banned++
+              }
+            }
+          }
+          
           // Picks
           if (seq.pickActions?.[0]) {
             allPicks_Pick1.push(seq.pickActions[0].mapId)
@@ -258,6 +357,47 @@ export function aggregateValorantScoutingReport(
           }
           for (const action of seq.pickActions || []) {
             allPicks_All.push(action.mapId)
+          }
+          
+          // Track map availability for "pick when available %" calculation
+          // Get all maps that were banned before our pick (by both teams)
+          const bannedMaps = new Set(seq.allBansBeforeOurPick || [])
+          const ourPicks = (seq.pickActions || []).map((a: any) => a.mapId)
+          
+          // Standard Valorant map pool (we'll use the maps we've seen)
+          const allMapsInVeto = new Set<string>()
+          for (const action of seq.banPhase1Actions || []) {
+            allMapsInVeto.add(action.mapId)
+          }
+          for (const action of seq.pickActions || []) {
+            allMapsInVeto.add(action.mapId)
+          }
+          for (const action of seq.banPhase2Actions || []) {
+            allMapsInVeto.add(action.mapId)
+          }
+          if (seq.deciderMap) {
+            allMapsInVeto.add(seq.deciderMap)
+          }
+          // Also add banned maps from allBansBeforeOurPick
+          for (const mapId of bannedMaps) {
+            allMapsInVeto.add(mapId)
+          }
+          
+          // For each map we know about, track if it was available and if we picked it
+          for (const mapId of allMapsInVeto) {
+            if (!mapPickAvailability[mapId]) {
+              mapPickAvailability[mapId] = { available: 0, picked: 0 }
+            }
+            
+            // Map is available if it wasn't banned before our pick
+            if (!bannedMaps.has(mapId)) {
+              mapPickAvailability[mapId].available++
+              
+              // Check if we picked it
+              if (ourPicks.includes(mapId)) {
+                mapPickAvailability[mapId].picked++
+              }
+            }
           }
           
           // Ban phase 2
@@ -316,6 +456,7 @@ export function aggregateValorantScoutingReport(
               playerName: player.playerName,
               picks: [],
               games: 0,
+              wins: 0,
             }
           }
           
@@ -327,7 +468,8 @@ export function aggregateValorantScoutingReport(
               })
             }
           }
-          playerPicks[player.playerId].games += player.agentPicks?.reduce((sum: number, f: any) => sum + f.count, 0) || 0
+          playerPicks[player.playerId].games += player.gamesPlayed || 0
+          playerPicks[player.playerId].wins += player.wins || 0
         }
       }
     }
@@ -401,19 +543,24 @@ export function aggregateValorantScoutingReport(
       if (ourTeamData) {
         seriesInfo.mapsPlayed = ourTeamData.totalMapsPlayed || 0
         
-        // Reconstruct games from map data
-        for (const mapPicks of ourTeamData.agentPicksByMap || []) {
-          // This is an approximation since we don't have full game data in analytics
+        // Use detailed game data from analytics
+        for (const gameDetail of ourTeamData.gameDetails || []) {
           seriesInfo.games.push({
-            gameNumber: seriesInfo.games.length + 1,
-            mapId: mapPicks.mapId,
-            winnerTeamId: null, // Not available in analytics
-            isWin: false, // Not available
-            ourAgents: (mapPicks.agentPicks || []).map((p: any) => ({
-              playerId: '',
-              playerName: '',
+            gameNumber: gameDetail.gameNumber,
+            mapId: gameDetail.mapId,
+            winnerTeamId: gameDetail.winnerTeamId,
+            isWin: gameDetail.isWin,
+            ourAgents: (gameDetail.playerStats || []).map((p: any) => ({
+              playerId: p.playerId,
+              playerName: p.playerName,
               agentId: p.agentId,
               agentName: p.agentName,
+              kills: p.kills || 0,
+              deaths: p.deaths || 0,
+              attackerKills: p.attackerKills || 0,
+              attackerDeaths: p.attackerDeaths || 0,
+              defenderKills: p.defenderKills || 0,
+              defenderDeaths: p.defenderDeaths || 0,
             })),
           })
         }
@@ -436,14 +583,14 @@ export function aggregateValorantScoutingReport(
     // Map Veto Stats
     mapVetoStats: totalSeries > 0 ? {
       banPhase1: {
-        ban1: calculateMapFrequencies(allBanPhase1_Ban1, totalSeries),
+        ban1: calculateFirstBanWhenAvailableFrequencies(mapFirstBanAvailability),
         ban2: calculateMapFrequencies(allBanPhase1_Ban2, totalSeries),
         allBans: calculateMapFrequencies(allBanPhase1_All, totalSeries),
       },
       mapPicks: {
         pick1: calculateMapFrequencies(allPicks_Pick1, totalSeries),
         pick2: calculateMapFrequencies(allPicks_Pick2, totalSeries),
-        allPicks: calculateMapFrequencies(allPicks_All, totalSeries),
+        allPicks: calculatePickWhenAvailableFrequencies(mapPickAvailability),
       },
       banPhase2: seriesWithBanPhase2 > 0 ? {
         allBans: calculateMapFrequencies(allBanPhase2, seriesWithBanPhase2),
@@ -467,6 +614,8 @@ export function aggregateValorantScoutingReport(
           playerId,
           playerName: data.playerName,
           totalMapsPlayed: data.games,
+          wins: data.wins,
+          winPercentage: data.games > 0 ? (data.wins / data.games) * 100 : 0,
           agentPicks: calculateAgentFrequencies(data.picks, data.games),
         }))
         .sort((a, b) => a.playerName.localeCompare(b.playerName)),

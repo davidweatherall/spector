@@ -15,15 +15,21 @@ export async function GET(
   { params }: { params: Promise<{ seriesId: string }> }
 ) {
   const { seriesId } = await params
+  const { searchParams } = new URL(request.url)
+  const forceRefresh = searchParams.get('refresh') === 'true'
 
   try {
     const convertedKey = getConvertedKey(seriesId)
 
-    // Check if already converted
-    const cached = await readJSON<ValorantStreamlinedSeries>(convertedKey)
-    if (cached) {
-      console.log(`Returning cached Valorant conversion for series ${seriesId}`)
-      return NextResponse.json({ data: cached, cached: true })
+    // Check if already converted (unless forcing refresh)
+    if (!forceRefresh) {
+      const cached = await readJSON<ValorantStreamlinedSeries>(convertedKey)
+      if (cached) {
+        console.log(`Returning cached Valorant conversion for series ${seriesId}`)
+        return NextResponse.json({ data: cached, cached: true })
+      }
+    } else {
+      console.log(`Forcing refresh for series ${seriesId}`)
     }
 
     const apiKey = process.env.GRID_ESPORTS_API_KEY

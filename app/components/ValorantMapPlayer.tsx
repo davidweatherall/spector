@@ -20,6 +20,7 @@ interface ValorantPlayer {
   id: string
   name: string
   teamId: string
+  characterId?: string // e.g. 'viper', 'fade' - for agent image
 }
 
 interface PlayerKill {
@@ -339,6 +340,9 @@ export default function ValorantMapPlayer({
             const side = getPlayerSide(coord.playerId)
             const { xPercent, yPercent } = convertToPercent(coord.x, coord.y)
             const isDead = isPlayerDead(coord.playerId)
+            const agentImagePath = playerInfo.characterId 
+              ? `/agents/${playerInfo.characterId.toLowerCase()}.png`
+              : null
             
             return (
               <div
@@ -351,9 +355,19 @@ export default function ValorantMapPlayer({
                 }}
                 title={`${playerInfo.name}${isDead ? ' (Dead)' : ''} (${coord.x.toFixed(0)}, ${coord.y.toFixed(0)})`}
               >
-                <span className={styles.playerInitial}>
-                  {playerInfo.name.charAt(0).toUpperCase()}
-                </span>
+                {agentImagePath ? (
+                  <Image
+                    src={agentImagePath}
+                    alt={playerInfo.characterId || playerInfo.name}
+                    width={24}
+                    height={24}
+                    className={styles.agentImage}
+                  />
+                ) : (
+                  <span className={styles.playerInitial}>
+                    {playerInfo.name.charAt(0).toUpperCase()}
+                  </span>
+                )}
               </div>
             )
           })}

@@ -591,7 +591,12 @@ export default function ValorantSeriesPage() {
                                           <ValorantMapPlayer
                                             mapName={game.mapId}
                                             coordinateTracking={round.coordinateTracking}
-                                            players={seriesData.teams.flatMap(team => 
+                                            players={game.players?.map(p => ({
+                                              id: p.id,
+                                              name: p.name,
+                                              teamId: p.teamId,
+                                              characterId: p.characterId,
+                                            })) || seriesData.teams.flatMap(team => 
                                               team.players.map(p => ({
                                                 id: p.id,
                                                 name: p.name,

@@ -475,20 +475,6 @@ export default function ValorantMapPlayer({
               </button>
             ))}
           </div>
-
-          <div className={styles.speedControl} style={{ marginLeft: '0.5rem' }}>
-            <span className={styles.speedLabel}>Mode:</span>
-            {(['callouts', 'api', 'auto'] as const).map(mode => (
-              <button
-                key={mode}
-                className={`${styles.speedButton} ${coordMode === mode ? styles.active : ''}`}
-                onClick={() => setCoordMode(mode)}
-                title={mode === 'callouts' ? 'Use callout locations from map data' : mode === 'api' ? 'Use Valorant API multipliers' : 'Use bounds from round data'}
-              >
-                {mode === 'callouts' ? 'Map' : mode === 'api' ? 'API' : 'Auto'}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 

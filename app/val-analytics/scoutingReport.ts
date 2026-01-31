@@ -33,6 +33,26 @@ interface MapAgentStats {
 }
 
 /**
+ * Defensive formation frequency
+ */
+interface DefensiveFormationFrequency {
+  formationKey: string
+  superRegions: { [superRegionName: string]: number }
+  count: number
+  percentage: number
+}
+
+/**
+ * Map-specific defensive setups
+ */
+interface MapDefensiveStats {
+  mapId: string
+  mapName: string
+  totalRounds: number
+  formations: DefensiveFormationFrequency[]
+}
+
+/**
  * Aggregated Valorant scouting report data across multiple series
  */
 export interface ValorantScoutingReport {
@@ -84,6 +104,30 @@ export interface ValorantScoutingReport {
       winPercentage: number
       agentPicks: AgentFrequency[]
     }[]
+  } | null
+  
+  // Defensive Setup Analysis
+  defensiveSetups: {
+    totalDefensiveRounds: number
+    byMap: MapDefensiveStats[]
+  } | null
+  
+  // Offensive Setup Analysis
+  offensiveSetups: {
+    totalOffensiveRounds: number
+    byMap: MapDefensiveStats[] // Same structure as defensive
+  } | null
+  
+  // Economy-Based Setups
+  economySetups: {
+    defensive: {
+      buy: { totalRounds: number; byMap: MapDefensiveStats[] }
+      eco: { totalRounds: number; byMap: MapDefensiveStats[] }
+    }
+    offensive: {
+      buy: { totalRounds: number; byMap: MapDefensiveStats[] }
+      eco: { totalRounds: number; byMap: MapDefensiveStats[] }
+    }
   } | null
   
   // Series breakdown for detailed view
@@ -286,6 +330,32 @@ export function aggregateValorantScoutingReport(
   const gamesByMap: { [mapId: string]: number } = {}
   const playerPicks: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string }[]; games: number; wins: number } } = {}
   
+  // Collect defensive setup data
+  // For each map, track formation counts: { formationKey: { superRegions: {...}, count: number } }
+  const defensiveFormationsByMap: { [mapId: string]: { [formationKey: string]: { superRegions: { [name: string]: number }; count: number } } } = {}
+  const defensiveRoundsByMap: { [mapId: string]: number } = {}
+  let totalDefensiveRounds = 0
+  
+  // Collect offensive setup data
+  const offensiveFormationsByMap: { [mapId: string]: { [formationKey: string]: { superRegions: { [name: string]: number }; count: number } } } = {}
+  const offensiveRoundsByMap: { [mapId: string]: number } = {}
+  let totalOffensiveRounds = 0
+  
+  // Collect economy-based setup data
+  type EconomyMapData = { [mapId: string]: { [formationKey: string]: { superRegions: { [name: string]: number }; count: number } } }
+  const economyData = {
+    defensive: { buy: {} as EconomyMapData, eco: {} as EconomyMapData },
+    offensive: { buy: {} as EconomyMapData, eco: {} as EconomyMapData },
+  }
+  const economyRounds = {
+    defensive: { buy: {} as { [mapId: string]: number }, eco: {} as { [mapId: string]: number } },
+    offensive: { buy: {} as { [mapId: string]: number }, eco: {} as { [mapId: string]: number } },
+  }
+  let totalEconomyRounds = {
+    defensive: { buy: 0, eco: 0 },
+    offensive: { buy: 0, eco: 0 },
+  }
+  
   // Process each series' analytics
   for (const result of analyticsResults) {
     // Get map veto data
@@ -474,6 +544,138 @@ export function aggregateValorantScoutingReport(
       }
     }
     
+    // Get defensive setup data
+    const defensiveData = collectAnalyticsData([result], 'defensiveSetupAnalysis')
+    
+    for (const data of defensiveData) {
+      const ourTeamData = data.teams?.find((t: any) => t.teamId === teamId)
+      
+      if (ourTeamData) {
+        totalDefensiveRounds += ourTeamData.totalDefensiveRounds || 0
+        
+        // Aggregate formations by map
+        for (const mapData of ourTeamData.byMap || []) {
+          const mapId = mapData.mapId
+          
+          if (!defensiveFormationsByMap[mapId]) {
+            defensiveFormationsByMap[mapId] = {}
+            defensiveRoundsByMap[mapId] = 0
+          }
+          defensiveRoundsByMap[mapId] += mapData.totalRounds || 0
+          
+          for (const formation of mapData.formations || []) {
+            const key = formation.formationKey
+            if (!defensiveFormationsByMap[mapId][key]) {
+              defensiveFormationsByMap[mapId][key] = {
+                superRegions: formation.superRegions,
+                count: 0,
+              }
+            }
+            defensiveFormationsByMap[mapId][key].count += formation.count || 0
+          }
+        }
+      }
+    }
+    
+    // Get offensive setup data
+    const offensiveData = collectAnalyticsData([result], 'offensiveSetupAnalysis')
+    
+    for (const data of offensiveData) {
+      const ourTeamData = data.teams?.find((t: any) => t.teamId === teamId)
+      
+      if (ourTeamData) {
+        totalOffensiveRounds += ourTeamData.totalOffensiveRounds || 0
+        
+        for (const mapData of ourTeamData.byMap || []) {
+          const mapId = mapData.mapId
+          
+          if (!offensiveFormationsByMap[mapId]) {
+            offensiveFormationsByMap[mapId] = {}
+            offensiveRoundsByMap[mapId] = 0
+          }
+          offensiveRoundsByMap[mapId] += mapData.totalRounds || 0
+          
+          for (const formation of mapData.formations || []) {
+            const key = formation.formationKey
+            if (!offensiveFormationsByMap[mapId][key]) {
+              offensiveFormationsByMap[mapId][key] = {
+                superRegions: formation.superRegions,
+                count: 0,
+              }
+            }
+            offensiveFormationsByMap[mapId][key].count += formation.count || 0
+          }
+        }
+      }
+    }
+    
+    // Get economy setup data
+    const economyAnalyticsData = collectAnalyticsData([result], 'economySetupAnalysis')
+    
+    for (const data of economyAnalyticsData) {
+      const ourTeamData = data.teams?.find((t: any) => t.teamId === teamId)
+      
+      if (ourTeamData) {
+        // Process defensive buy/eco
+        for (const economyType of ['buy', 'eco'] as const) {
+          const sideData = ourTeamData.defensive?.[economyType]
+          if (sideData) {
+            totalEconomyRounds.defensive[economyType] += sideData.totalRounds || 0
+            
+            for (const mapData of sideData.byMap || []) {
+              const mapId = mapData.mapId
+              
+              if (!economyData.defensive[economyType][mapId]) {
+                economyData.defensive[economyType][mapId] = {}
+                economyRounds.defensive[economyType][mapId] = 0
+              }
+              economyRounds.defensive[economyType][mapId] += mapData.totalRounds || 0
+              
+              for (const formation of mapData.formations || []) {
+                const key = formation.formationKey
+                if (!economyData.defensive[economyType][mapId][key]) {
+                  economyData.defensive[economyType][mapId][key] = {
+                    superRegions: formation.superRegions,
+                    count: 0,
+                  }
+                }
+                economyData.defensive[economyType][mapId][key].count += formation.count || 0
+              }
+            }
+          }
+        }
+        
+        // Process offensive buy/eco
+        for (const economyType of ['buy', 'eco'] as const) {
+          const sideData = ourTeamData.offensive?.[economyType]
+          if (sideData) {
+            totalEconomyRounds.offensive[economyType] += sideData.totalRounds || 0
+            
+            for (const mapData of sideData.byMap || []) {
+              const mapId = mapData.mapId
+              
+              if (!economyData.offensive[economyType][mapId]) {
+                economyData.offensive[economyType][mapId] = {}
+                economyRounds.offensive[economyType][mapId] = 0
+              }
+              economyRounds.offensive[economyType][mapId] += mapData.totalRounds || 0
+              
+              for (const formation of mapData.formations || []) {
+                const key = formation.formationKey
+                if (!economyData.offensive[economyType][mapId][key]) {
+                  economyData.offensive[economyType][mapId][key] = {
+                    superRegions: formation.superRegions,
+                    count: 0,
+                  }
+                }
+                economyData.offensive[economyType][mapId][key].count += formation.count || 0
+              }
+            }
+          }
+        }
+      }
+    }
+    
     // Build series breakdown (need to get raw series data)
     // For now, we'll extract what we can from analytics
     const seriesInfo: ValorantScoutingReport['seriesBreakdown'][0] = {
@@ -619,6 +821,145 @@ export function aggregateValorantScoutingReport(
           agentPicks: calculateAgentFrequencies(data.picks, data.games),
         }))
         .sort((a, b) => a.playerName.localeCompare(b.playerName)),
+    } : null,
+    
+    // Defensive Setups
+    defensiveSetups: totalDefensiveRounds > 0 ? {
+      totalDefensiveRounds,
+      byMap: Object.entries(defensiveFormationsByMap)
+        .map(([mapId, formations]) => ({
+          mapId,
+          mapName: formatMapName(mapId),
+          totalRounds: defensiveRoundsByMap[mapId] || 0,
+          formations: Object.entries(formations)
+            .map(([formationKey, data]) => ({
+              formationKey,
+              superRegions: data.superRegions,
+              count: data.count,
+              percentage: defensiveRoundsByMap[mapId] > 0 
+                ? (data.count / defensiveRoundsByMap[mapId]) * 100 
+                : 0,
+            }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10), // Top 10 formations per map
+        }))
+        .sort((a, b) => b.totalRounds - a.totalRounds),
+    } : null,
+    
+    // Offensive Setups
+    offensiveSetups: totalOffensiveRounds > 0 ? {
+      totalOffensiveRounds,
+      byMap: Object.entries(offensiveFormationsByMap)
+        .map(([mapId, formations]) => ({
+          mapId,
+          mapName: formatMapName(mapId),
+          totalRounds: offensiveRoundsByMap[mapId] || 0,
+          formations: Object.entries(formations)
+            .map(([formationKey, data]) => ({
+              formationKey,
+              superRegions: data.superRegions,
+              count: data.count,
+              percentage: offensiveRoundsByMap[mapId] > 0 
+                ? (data.count / offensiveRoundsByMap[mapId]) * 100 
+                : 0,
+            }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10), // Top 10 formations per map
+        }))
+        .sort((a, b) => b.totalRounds - a.totalRounds),
+    } : null,
+    
+    // Economy-Based Setups
+    economySetups: (totalEconomyRounds.defensive.buy > 0 || totalEconomyRounds.defensive.eco > 0 ||
+                   totalEconomyRounds.offensive.buy > 0 || totalEconomyRounds.offensive.eco > 0) ? {
+      defensive: {
+        buy: {
+          totalRounds: totalEconomyRounds.defensive.buy,
+          byMap: Object.entries(economyData.defensive.buy)
+            .map(([mapId, formations]) => ({
+              mapId,
+              mapName: formatMapName(mapId),
+              totalRounds: economyRounds.defensive.buy[mapId] || 0,
+              formations: Object.entries(formations)
+                .map(([formationKey, data]) => ({
+                  formationKey,
+                  superRegions: data.superRegions,
+                  count: data.count,
+                  percentage: economyRounds.defensive.buy[mapId] > 0
+                    ? (data.count / economyRounds.defensive.buy[mapId]) * 100
+                    : 0,
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10),
+            }))
+            .sort((a, b) => b.totalRounds - a.totalRounds),
+        },
+        eco: {
+          totalRounds: totalEconomyRounds.defensive.eco,
+          byMap: Object.entries(economyData.defensive.eco)
+            .map(([mapId, formations]) => ({
+              mapId,
+              mapName: formatMapName(mapId),
+              totalRounds: economyRounds.defensive.eco[mapId] || 0,
+              formations: Object.entries(formations)
+                .map(([formationKey, data]) => ({
+                  formationKey,
+                  superRegions: data.superRegions,
+                  count: data.count,
+                  percentage: economyRounds.defensive.eco[mapId] > 0
+                    ? (data.count / economyRounds.defensive.eco[mapId]) * 100
+                    : 0,
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10),
+            }))
+            .sort((a, b) => b.totalRounds - a.totalRounds),
+        },
+      },
+      offensive: {
+        buy: {
+          totalRounds: totalEconomyRounds.offensive.buy,
+          byMap: Object.entries(economyData.offensive.buy)
+            .map(([mapId, formations]) => ({
+              mapId,
+              mapName: formatMapName(mapId),
+              totalRounds: economyRounds.offensive.buy[mapId] || 0,
+              formations: Object.entries(formations)
+                .map(([formationKey, data]) => ({
+                  formationKey,
+                  superRegions: data.superRegions,
+                  count: data.count,
+                  percentage: economyRounds.offensive.buy[mapId] > 0
+                    ? (data.count / economyRounds.offensive.buy[mapId]) * 100
+                    : 0,
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10),
+            }))
+            .sort((a, b) => b.totalRounds - a.totalRounds),
+        },
+        eco: {
+          totalRounds: totalEconomyRounds.offensive.eco,
+          byMap: Object.entries(economyData.offensive.eco)
+            .map(([mapId, formations]) => ({
+              mapId,
+              mapName: formatMapName(mapId),
+              totalRounds: economyRounds.offensive.eco[mapId] || 0,
+              formations: Object.entries(formations)
+                .map(([formationKey, data]) => ({
+                  formationKey,
+                  superRegions: data.superRegions,
+                  count: data.count,
+                  percentage: economyRounds.offensive.eco[mapId] > 0
+                    ? (data.count / economyRounds.offensive.eco[mapId]) * 100
+                    : 0,
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10),
+            }))
+            .sort((a, b) => b.totalRounds - a.totalRounds),
+        },
+      },
     } : null,
     
     seriesBreakdown,

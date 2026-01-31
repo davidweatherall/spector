@@ -16,6 +16,16 @@ const getAgentImagePath = (agentName: string): string => {
   return `/agents/${lowerName}.png`
 }
 
+// Helper to shorten super region names for display
+const shortenRegionName = (region: string): string => {
+  const lower = region.toLowerCase()
+  if (lower === 'attacker side') return ' atk spawn'
+  if (lower === 'defender side') return ' def spawn'
+  if (lower === 'mid') return ' mid'
+  // For A, B, C sites, just use the first letter uppercase
+  return region.charAt(0).toUpperCase()
+}
+
 interface TournamentSelectorProps {
   game: 'lol' | 'valorant'
 }
@@ -74,6 +84,44 @@ interface ValorantScoutingReport {
       winPercentage: number
       agentPicks: { agentId: string; agentName: string; count: number; percentage: number }[]
     }[]
+  } | null
+  defensiveSetups: {
+    totalDefensiveRounds: number
+    byMap: {
+      mapId: string
+      mapName: string
+      totalRounds: number
+      formations: {
+        formationKey: string
+        superRegions: { [superRegionName: string]: number }
+        count: number
+        percentage: number
+      }[]
+    }[]
+  } | null
+  offensiveSetups: {
+    totalOffensiveRounds: number
+    byMap: {
+      mapId: string
+      mapName: string
+      totalRounds: number
+      formations: {
+        formationKey: string
+        superRegions: { [superRegionName: string]: number }
+        count: number
+        percentage: number
+      }[]
+    }[]
+  } | null
+  economySetups: {
+    defensive: {
+      buy: { totalRounds: number; byMap: { mapId: string; mapName: string; totalRounds: number; formations: { formationKey: string; superRegions: { [superRegionName: string]: number }; count: number; percentage: number }[] }[] }
+      eco: { totalRounds: number; byMap: { mapId: string; mapName: string; totalRounds: number; formations: { formationKey: string; superRegions: { [superRegionName: string]: number }; count: number; percentage: number }[] }[] }
+    }
+    offensive: {
+      buy: { totalRounds: number; byMap: { mapId: string; mapName: string; totalRounds: number; formations: { formationKey: string; superRegions: { [superRegionName: string]: number }; count: number; percentage: number }[] }[] }
+      eco: { totalRounds: number; byMap: { mapId: string; mapName: string; totalRounds: number; formations: { formationKey: string; superRegions: { [superRegionName: string]: number }; count: number; percentage: number }[] }[] }
+    }
   } | null
   seriesBreakdown: {
     seriesId: string
@@ -1834,6 +1882,281 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                 </div>
               )}
             </div>
+          )}
+          
+          {/* Defensive Setups Section */}
+          {valScoutingReport.defensiveSetups && valScoutingReport.defensiveSetups.byMap.length > 0 && (
+            <div className={styles.scoutingSection}>
+              <h4 className={styles.sectionTitle}>
+                Defensive Setups ({valScoutingReport.defensiveSetups.totalDefensiveRounds} rounds)
+                <span className={styles.sectionSubtitle}>Player positions when freeze time ends</span>
+              </h4>
+              
+              <div className={styles.valDefenseMapsGrid}>
+                {valScoutingReport.defensiveSetups.byMap.map((mapData) => (
+                  <div key={mapData.mapId} className={styles.valDefenseMapSection}>
+                    <div className={styles.valDefenseMapHeader}>
+                      {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
+                    </div>
+                    <div className={styles.valDefenseFormations}>
+                      {mapData.formations.slice(0, 4).map((formation, idx) => (
+                        <div key={idx} className={styles.valDefenseFormationRow}>
+                          <div className={styles.valDefenseFormationChips}>
+                            {Object.entries(formation.superRegions)
+                              .sort((a, b) => a[0].localeCompare(b[0]))
+                              .map(([region, count]) => (
+                                <span 
+                                  key={region} 
+                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                >
+                                  {count}{shortenRegionName(region)}
+                                </span>
+                              ))}
+                          </div>
+                          <div className={styles.valDefenseFormationBar}>
+                            <div 
+                              className={styles.valDefenseFormationBarFill} 
+                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                            />
+                          </div>
+                          <span className={styles.valDefenseFormationPercent}>{Math.round(formation.percentage)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Offensive Setups Section */}
+          {valScoutingReport.offensiveSetups && valScoutingReport.offensiveSetups.byMap.length > 0 && (
+            <div className={styles.scoutingSection}>
+              <h4 className={styles.sectionTitle}>
+                Offensive Executes ({valScoutingReport.offensiveSetups.totalOffensiveRounds} rounds)
+                <span className={styles.sectionSubtitle}>Player positions at first kill</span>
+              </h4>
+              
+              <div className={styles.valDefenseMapsGrid}>
+                {valScoutingReport.offensiveSetups.byMap.map((mapData) => (
+                  <div key={mapData.mapId} className={styles.valDefenseMapSection}>
+                    <div className={styles.valDefenseMapHeader}>
+                      {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
+                    </div>
+                    <div className={styles.valDefenseFormations}>
+                      {mapData.formations.slice(0, 4).map((formation, idx) => (
+                        <div key={idx} className={styles.valDefenseFormationRow}>
+                          <div className={styles.valDefenseFormationChips}>
+                            {Object.entries(formation.superRegions)
+                              .sort((a, b) => a[0].localeCompare(b[0]))
+                              .map(([region, count]) => (
+                                <span 
+                                  key={region} 
+                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                >
+                                  {count}{shortenRegionName(region)}
+                                </span>
+                              ))}
+                          </div>
+                          <div className={styles.valDefenseFormationBar}>
+                            <div 
+                              className={styles.valOffenseFormationBarFill} 
+                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                            />
+                          </div>
+                          <span className={styles.valOffenseFormationPercent}>{Math.round(formation.percentage)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Economy-Based Setups */}
+          {valScoutingReport.economySetups && (
+            <>
+              {/* Defensive Buy Rounds */}
+              {valScoutingReport.economySetups.defensive.buy.byMap.length > 0 && (
+                <div className={styles.scoutingSection}>
+                  <h4 className={styles.sectionTitle}>
+                    Defensive - Buy Rounds ({valScoutingReport.economySetups.defensive.buy.totalRounds} rounds)
+                    <span className={styles.sectionSubtitle}>Won previous round or bought rifle/op</span>
+                  </h4>
+                  
+                  <div className={styles.valDefenseMapsGrid}>
+                    {valScoutingReport.economySetups.defensive.buy.byMap.map((mapData) => (
+                      <div key={mapData.mapId} className={styles.valDefenseMapSection}>
+                        <div className={styles.valDefenseMapHeader}>
+                          {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
+                        </div>
+                        <div className={styles.valDefenseFormations}>
+                          {mapData.formations.slice(0, 4).map((formation, idx) => (
+                            <div key={idx} className={styles.valDefenseFormationRow}>
+                              <div className={styles.valDefenseFormationChips}>
+                                {Object.entries(formation.superRegions)
+                                  .sort((a, b) => a[0].localeCompare(b[0]))
+                                  .map(([region, count]) => (
+                                    <span 
+                                      key={region} 
+                                      className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                    >
+                                      {count}{shortenRegionName(region)}
+                                    </span>
+                                  ))}
+                              </div>
+                              <div className={styles.valDefenseFormationBar}>
+                                <div 
+                                  className={styles.valBuyFormationBarFill} 
+                                  style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                                />
+                              </div>
+                              <span className={styles.valBuyFormationPercent}>{Math.round(formation.percentage)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Defensive Eco Rounds */}
+              {valScoutingReport.economySetups.defensive.eco.byMap.length > 0 && (
+                <div className={styles.scoutingSection}>
+                  <h4 className={styles.sectionTitle}>
+                    Defensive - Eco Rounds ({valScoutingReport.economySetups.defensive.eco.totalRounds} rounds)
+                    <span className={styles.sectionSubtitle}>Lost previous round, no rifle/op</span>
+                  </h4>
+                  
+                  <div className={styles.valDefenseMapsGrid}>
+                    {valScoutingReport.economySetups.defensive.eco.byMap.map((mapData) => (
+                      <div key={mapData.mapId} className={styles.valDefenseMapSection}>
+                        <div className={styles.valDefenseMapHeader}>
+                          {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
+                        </div>
+                        <div className={styles.valDefenseFormations}>
+                          {mapData.formations.slice(0, 4).map((formation, idx) => (
+                            <div key={idx} className={styles.valDefenseFormationRow}>
+                              <div className={styles.valDefenseFormationChips}>
+                                {Object.entries(formation.superRegions)
+                                  .sort((a, b) => a[0].localeCompare(b[0]))
+                                  .map(([region, count]) => (
+                                    <span 
+                                      key={region} 
+                                      className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                    >
+                                      {count}{shortenRegionName(region)}
+                                    </span>
+                                  ))}
+                              </div>
+                              <div className={styles.valDefenseFormationBar}>
+                                <div 
+                                  className={styles.valEcoFormationBarFill} 
+                                  style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                                />
+                              </div>
+                              <span className={styles.valEcoFormationPercent}>{Math.round(formation.percentage)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Offensive Buy Rounds */}
+              {valScoutingReport.economySetups.offensive.buy.byMap.length > 0 && (
+                <div className={styles.scoutingSection}>
+                  <h4 className={styles.sectionTitle}>
+                    Offensive - Buy Rounds ({valScoutingReport.economySetups.offensive.buy.totalRounds} rounds)
+                    <span className={styles.sectionSubtitle}>Won previous round or bought rifle/op</span>
+                  </h4>
+                  
+                  <div className={styles.valDefenseMapsGrid}>
+                    {valScoutingReport.economySetups.offensive.buy.byMap.map((mapData) => (
+                      <div key={mapData.mapId} className={styles.valDefenseMapSection}>
+                        <div className={styles.valDefenseMapHeader}>
+                          {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
+                        </div>
+                        <div className={styles.valDefenseFormations}>
+                          {mapData.formations.slice(0, 4).map((formation, idx) => (
+                            <div key={idx} className={styles.valDefenseFormationRow}>
+                              <div className={styles.valDefenseFormationChips}>
+                                {Object.entries(formation.superRegions)
+                                  .sort((a, b) => a[0].localeCompare(b[0]))
+                                  .map(([region, count]) => (
+                                    <span 
+                                      key={region} 
+                                      className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                    >
+                                      {count}{shortenRegionName(region)}
+                                    </span>
+                                  ))}
+                              </div>
+                              <div className={styles.valDefenseFormationBar}>
+                                <div 
+                                  className={styles.valBuyFormationBarFill} 
+                                  style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                                />
+                              </div>
+                              <span className={styles.valBuyFormationPercent}>{Math.round(formation.percentage)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Offensive Eco Rounds */}
+              {valScoutingReport.economySetups.offensive.eco.byMap.length > 0 && (
+                <div className={styles.scoutingSection}>
+                  <h4 className={styles.sectionTitle}>
+                    Offensive - Eco Rounds ({valScoutingReport.economySetups.offensive.eco.totalRounds} rounds)
+                    <span className={styles.sectionSubtitle}>Lost previous round, no rifle/op</span>
+                  </h4>
+                  
+                  <div className={styles.valDefenseMapsGrid}>
+                    {valScoutingReport.economySetups.offensive.eco.byMap.map((mapData) => (
+                      <div key={mapData.mapId} className={styles.valDefenseMapSection}>
+                        <div className={styles.valDefenseMapHeader}>
+                          {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
+                        </div>
+                        <div className={styles.valDefenseFormations}>
+                          {mapData.formations.slice(0, 4).map((formation, idx) => (
+                            <div key={idx} className={styles.valDefenseFormationRow}>
+                              <div className={styles.valDefenseFormationChips}>
+                                {Object.entries(formation.superRegions)
+                                  .sort((a, b) => a[0].localeCompare(b[0]))
+                                  .map(([region, count]) => (
+                                    <span 
+                                      key={region} 
+                                      className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                    >
+                                      {count}{shortenRegionName(region)}
+                                    </span>
+                                  ))}
+                              </div>
+                              <div className={styles.valDefenseFormationBar}>
+                                <div 
+                                  className={styles.valEcoFormationBarFill} 
+                                  style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                                />
+                              </div>
+                              <span className={styles.valEcoFormationPercent}>{Math.round(formation.percentage)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

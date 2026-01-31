@@ -294,6 +294,20 @@ export function getClosestCallout(
   x: number,
   y: number
 ): string | null {
+  const callout = getClosestCalloutData(mapName, x, y)
+  if (!callout) return null
+  return `${callout.superRegionName}: ${callout.regionName}`
+}
+
+/**
+ * Find the closest callout to given coordinates
+ * Returns the full callout data object or null if no callouts
+ */
+export function getClosestCalloutData(
+  mapName: string,
+  x: number,
+  y: number
+): ValorantMapCallout | null {
   const map = getMapByName(mapName)
   if (!map || !map.callouts || map.callouts.length === 0) {
     return null
@@ -313,5 +327,5 @@ export function getClosestCallout(
     }
   }
   
-  return `${closestCallout.superRegionName}: ${closestCallout.regionName}`
+  return closestCallout
 }

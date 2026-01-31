@@ -5,6 +5,9 @@ import { storeJSON, readJSON } from '../storage'
 // Import all Valorant analytics functions
 import { mapVetoAnalysis } from './mapVetoAnalysis'
 import { agentPickAnalysis } from './agentPickAnalysis'
+import { defensiveSetupAnalysis } from './defensiveSetupAnalysis'
+import { offensiveSetupAnalysis } from './offensiveSetupAnalysis'
+import { economySetupAnalysis } from './economySetupAnalysis'
 
 /**
  * All Valorant analytics functions to run
@@ -13,6 +16,9 @@ import { agentPickAnalysis } from './agentPickAnalysis'
 const analyticsFunctions: ValorantAnalyticsFunction[] = [
   mapVetoAnalysis,
   agentPickAnalysis,
+  defensiveSetupAnalysis,
+  offensiveSetupAnalysis,
+  economySetupAnalysis,
   // Add more Valorant analytics functions here as they are created
 ]
 
@@ -80,4 +86,7 @@ export async function valorantAnalyticsExist(seriesId: string): Promise<boolean>
 export * from './types'
 export { mapVetoAnalysis } from './mapVetoAnalysis'
 export { agentPickAnalysis } from './agentPickAnalysis'
+export { analyzeDefensiveSetups, runDefensiveSetupAnalysis, type TeamDefensiveAnalysis, type MapDefensiveSetups, type DefensiveFormation } from './defensiveSetupAnalysis'
+export { analyzeOffensiveSetups, runOffensiveSetupAnalysis, type TeamOffensiveAnalysis, type MapOffensiveSetups, type OffensiveFormation } from './offensiveSetupAnalysis'
+export { analyzeEconomySetups, runEconomySetupAnalysis, economySetupAnalysis, type TeamEconomyAnalysis, type EconomySetupData, type MapEconomySetups } from './economySetupAnalysis'
 export { aggregateValorantScoutingReport, type ValorantScoutingReport } from './scoutingReport'

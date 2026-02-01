@@ -7,6 +7,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useGridData, Tournament, Team } from '../contexts/GridDataContext'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { getChampionImagePath } from '../utils/championMapping'
+import ValorantMapPlayer from './ValorantMapPlayer'
 import styles from './TournamentSelector.module.css'
 
 // Helper to get Valorant agent image path
@@ -123,6 +124,26 @@ interface ValorantScoutingReport {
       eco: { totalRounds: number; byMap: { mapId: string; mapName: string; totalRounds: number; formations: { formationKey: string; superRegions: { [superRegionName: string]: number }; count: number; percentage: number }[] }[] }
     }
   } | null
+  playerPositions: {
+    byMap: {
+      mapId: string
+      mapName: string
+      players: {
+        playerId: string
+        playerName: string
+        totalRounds: number
+        clusters: {
+          centroidX: number
+          centroidY: number
+          callout: string
+          superRegion: string
+          count: number
+          percentage: number
+          positions: { x: number; y: number }[]
+        }[]
+      }[]
+    }[]
+  } | null
   seriesBreakdown: {
     seriesId: string
     opponent: string
@@ -169,6 +190,9 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const [valScoutingReport, setValScoutingReport] = useState<ValorantScoutingReport | null>(null)
   const [scoutingError, setScoutingError] = useState<string | null>(null)
   const [selectedValMapTab, setSelectedValMapTab] = useState<string | null>(null)
+  const [selectedPlayerPosMap, setSelectedPlayerPosMap] = useState<string | null>(null)
+  const [selectedPlayerPositions, setSelectedPlayerPositions] = useState<Set<string>>(new Set())
+  const [customGameCount, setCustomGameCount] = useState<string>('10')
   const [selectedGoldLeadRole, setSelectedGoldLeadRole] = useState<'top' | 'jungle' | 'mid' | 'bot' | 'support'>('mid')
   const [selectedCounterPickTab, setSelectedCounterPickTab] = useState<'top-cp' | 'top-cpd' | 'mid-cp' | 'mid-cpd'>('mid-cp')
   const [selectedBanPhasePickSide, setSelectedBanPhasePickSide] = useState<'first' | 'second'>('first')
@@ -363,6 +387,9 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
     // Close filters panel when generating report
     setIsExpanded(false)
     
+    // Clear previous report
+    setScoutingReport(null)
+    
     // Apply limit if specified
     const gamesToAnalyze = limit ? games.slice(0, limit) : games
     
@@ -445,6 +472,11 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
     
     // Close filters panel when generating report
     setIsExpanded(false)
+    
+    // Clear previous report and related state
+    setValScoutingReport(null)
+    setSelectedPlayerPosMap(null)
+    setSelectedPlayerPositions(new Set())
     
     // Apply limit if specified
     const gamesToAnalyze = limit ? games.slice(0, limit) : games
@@ -750,6 +782,31 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
             >
               {scoutingLoading ? 'Generating...' : `Full Report (${games.length} Games)`}
             </button>
+            <button
+                className={`${styles.scoutingButton} ${styles.scoutingButtonCustom} ${scoutingLoading ? styles.scoutingButtonLoading : ''} ${game === 'valorant' ? styles.scoutingButtonVal : ''}`}
+                onClick={() => {
+                  const count = parseInt(customGameCount, 10)
+                  if (count > 0) {
+                    game === 'lol' ? handleGenerateScoutingReport(count) : handleGenerateValScoutingReport(count)
+                  }
+                }}
+                disabled={scoutingLoading || games.length === 0 || !customGameCount || parseInt(customGameCount, 10) < 1}
+              >
+                <input
+                  type="number"
+                  min="1"
+                  max={games.length}
+                  value={customGameCount}
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    setCustomGameCount(e.target.value)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className={styles.customGameInputInline}
+                  placeholder="10"
+                />
+                <span>Games</span>
+              </button>
           </div>
         </div>
       )}
@@ -2158,6 +2215,130 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
               )}
             </>
           )}
+          
+          {/* Player Positions Section */}
+          {valScoutingReport.playerPositions && valScoutingReport.playerPositions.byMap.length > 0 && (() => {
+            // Set default map if not selected
+            const availableMaps = valScoutingReport.playerPositions.byMap
+            const currentMapId = selectedPlayerPosMap || availableMaps[0]?.mapId
+            const currentMapData = availableMaps.find(m => m.mapId === currentMapId)
+            
+            if (!currentMapData) return null
+            
+            // Collect all clusters with >20% for all players on this map
+            const allClusters = currentMapData.players.flatMap(player =>
+              player.clusters
+                .filter(cluster => cluster.percentage >= 20)
+                .map((cluster, idx) => ({
+                  id: `${player.playerId}-${idx}`,
+                  playerName: player.playerName,
+                  callout: cluster.callout,
+                  percentage: cluster.percentage,
+                  positions: cluster.positions || [],
+                  count: cluster.count,
+                }))
+            )
+            
+            // Expand selected clusters into individual position dots
+            const staticPositions = allClusters
+              .filter(cluster => selectedPlayerPositions.has(cluster.id))
+              .flatMap(cluster => 
+                cluster.positions.map((pos, posIdx) => ({
+                  id: `${cluster.id}-pos-${posIdx}`,
+                  label: cluster.playerName,
+                  x: pos.x,
+                  y: pos.y,
+                  percentage: cluster.percentage,
+                  tooltip: `${cluster.playerName}: ${cluster.callout} (${Math.round(cluster.percentage)}%)`,
+                }))
+              )
+            
+            return (
+              <div className={styles.scoutingSection}>
+                <h4 className={styles.sectionTitle}>
+                  Common Locations
+                  <span className={styles.sectionSubtitle}>Positions held &gt;20% of rounds</span>
+                </h4>
+                
+                <div className={styles.valPlayerPosVisualContainer}>
+                  {/* Map Selector */}
+                  <div className={styles.valPlayerPosMapSelector}>
+                    {availableMaps.map((mapData) => (
+                      <button
+                        key={mapData.mapId}
+                        className={`${styles.valPlayerPosMapBtn} ${mapData.mapId === currentMapId ? styles.valPlayerPosMapBtnActive : ''}`}
+                        onClick={() => {
+                          setSelectedPlayerPosMap(mapData.mapId)
+                          setSelectedPlayerPositions(new Set()) // Clear selections on map change
+                        }}
+                      >
+                        {mapData.mapName}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Map with positions using ValorantMapPlayer static mode */}
+                  <div className={styles.valPlayerPosMapWrapper}>
+                    <ValorantMapPlayer
+                      mode="static"
+                      mapName={currentMapId}
+                      staticPositions={staticPositions}
+                      mapSize={400}
+                      dotSize="small"
+                    />
+                    
+                    {/* Position Filters */}
+                    <div className={styles.valPlayerPosFilters}>
+                      <div className={styles.valPlayerPosFiltersHeader}>
+                        <span>Select positions to display</span>
+                        <button
+                          className={styles.valPlayerPosSelectAll}
+                          onClick={() => {
+                            if (selectedPlayerPositions.size === allClusters.length) {
+                              setSelectedPlayerPositions(new Set())
+                            } else {
+                              setSelectedPlayerPositions(new Set(allClusters.map(c => c.id)))
+                            }
+                          }}
+                        >
+                          {selectedPlayerPositions.size === allClusters.length ? 'Clear All' : 'Select All'}
+                        </button>
+                      </div>
+                      <div className={styles.valPlayerPosFilterList}>
+                        {allClusters.map((cluster) => (
+                          <label
+                            key={cluster.id}
+                            className={`${styles.valPlayerPosFilterItem} ${selectedPlayerPositions.has(cluster.id) ? styles.valPlayerPosFilterItemActive : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedPlayerPositions.has(cluster.id)}
+                              onChange={(e) => {
+                                const newSet = new Set(selectedPlayerPositions)
+                                if (e.target.checked) {
+                                  newSet.add(cluster.id)
+                                } else {
+                                  newSet.delete(cluster.id)
+                                }
+                                setSelectedPlayerPositions(newSet)
+                              }}
+                              className={styles.valPlayerPosCheckbox}
+                            />
+                            <span className={styles.valPlayerPosFilterLabel}>
+                              {cluster.playerName} - {cluster.callout}
+                            </span>
+                            <span className={styles.valPlayerPosFilterPercent}>
+                              {cluster.count} ({Math.round(cluster.percentage)}%)
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
 

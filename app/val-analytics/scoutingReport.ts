@@ -130,6 +130,28 @@ export interface ValorantScoutingReport {
     }
   } | null
   
+  // Player Position Analysis
+  playerPositions: {
+    byMap: {
+      mapId: string
+      mapName: string
+      players: {
+        playerId: string
+        playerName: string
+        totalRounds: number
+        clusters: {
+          centroidX: number
+          centroidY: number
+          callout: string
+          superRegion: string
+          count: number
+          percentage: number
+          positions: { x: number; y: number }[]
+        }[]
+      }[]
+    }[]
+  } | null
+  
   // Series breakdown for detailed view
   seriesBreakdown: {
     seriesId: string
@@ -355,6 +377,19 @@ export function aggregateValorantScoutingReport(
     defensive: { buy: 0, eco: 0 },
     offensive: { buy: 0, eco: 0 },
   }
+  
+  // Collect player position data
+  // map -> player -> clusters[]
+  type PlayerCluster = { centroidX: number; centroidY: number; callout: string; superRegion: string; count: number; positions: { x: number; y: number }[] }
+  const playerPositionsByMap: {
+    [mapId: string]: {
+      [playerId: string]: {
+        playerName: string
+        totalRounds: number
+        clusters: PlayerCluster[]
+      }
+    }
+  } = {}
   
   // Process each series' analytics
   for (const result of analyticsResults) {
@@ -676,6 +711,61 @@ export function aggregateValorantScoutingReport(
       }
     }
     
+    // Get player position data
+    const playerPosData = collectAnalyticsData([result], 'playerPositionAnalysis')
+    
+    for (const data of playerPosData) {
+      const ourTeamData = data.teams?.find((t: any) => t.teamId === teamId)
+      
+      if (ourTeamData) {
+        for (const mapData of ourTeamData.byMap || []) {
+          const mapId = mapData.mapId
+          
+          if (!playerPositionsByMap[mapId]) {
+            playerPositionsByMap[mapId] = {}
+          }
+          
+          for (const player of mapData.players || []) {
+            if (!playerPositionsByMap[mapId][player.playerId]) {
+              playerPositionsByMap[mapId][player.playerId] = {
+                playerName: player.playerName,
+                totalRounds: 0,
+                clusters: [],
+              }
+            }
+            
+            playerPositionsByMap[mapId][player.playerId].totalRounds += player.totalRounds || 0
+            
+            // Merge clusters
+            for (const cluster of player.clusters || []) {
+              const existing = playerPositionsByMap[mapId][player.playerId].clusters.find(
+                c => c.callout === cluster.callout
+              )
+              if (existing) {
+                existing.count += cluster.count
+                // Merge positions
+                existing.positions = [...existing.positions, ...(cluster.positions || [])]
+                // Recalculate centroid from all positions
+                if (existing.positions.length > 0) {
+                  existing.centroidX = existing.positions.reduce((sum, p) => sum + p.x, 0) / existing.positions.length
+                  existing.centroidY = existing.positions.reduce((sum, p) => sum + p.y, 0) / existing.positions.length
+                }
+              } else {
+                playerPositionsByMap[mapId][player.playerId].clusters.push({
+                  centroidX: cluster.centroidX || 0,
+                  centroidY: cluster.centroidY || 0,
+                  callout: cluster.callout,
+                  superRegion: cluster.superRegion,
+                  count: cluster.count,
+                  positions: cluster.positions || [],
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+    
     // Build series breakdown (need to get raw series data)
     // For now, we'll extract what we can from analytics
     const seriesInfo: ValorantScoutingReport['seriesBreakdown'][0] = {
@@ -960,6 +1050,32 @@ export function aggregateValorantScoutingReport(
             .sort((a, b) => b.totalRounds - a.totalRounds),
         },
       },
+    } : null,
+    
+    // Player Positions
+    playerPositions: Object.keys(playerPositionsByMap).length > 0 ? {
+      byMap: Object.entries(playerPositionsByMap)
+        .map(([mapId, players]) => ({
+          mapId,
+          mapName: formatMapName(mapId),
+          players: Object.entries(players)
+            .map(([playerId, data]) => ({
+              playerId,
+              playerName: data.playerName,
+              totalRounds: data.totalRounds,
+              clusters: data.clusters
+                .map(c => ({
+                  ...c,
+                  percentage: data.totalRounds > 0 ? (c.count / data.totalRounds) * 100 : 0,
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 5),
+            }))
+            .filter(p => p.clusters.length > 0)
+            .sort((a, b) => a.playerName.localeCompare(b.playerName)),
+        }))
+        .filter(m => m.players.length > 0)
+        .sort((a, b) => a.mapName.localeCompare(b.mapName)),
     } : null,
     
     seriesBreakdown,

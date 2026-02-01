@@ -38,7 +38,18 @@ interface CoordinateBounds {
   maxY: number
 }
 
-interface ValorantMapPlayerProps {
+// For static mode - shows fixed positions without playback
+interface StaticPosition {
+  id: string
+  label: string
+  x: number
+  y: number
+  percentage?: number // Optional percentage to display
+  tooltip?: string // Optional custom tooltip
+}
+
+interface ValorantMapPlayerPropsPlayback {
+  mode?: 'playback'
   mapName: string
   coordinateTracking: CoordinateSnapshot[]
   players: ValorantPlayer[]
@@ -48,15 +59,33 @@ interface ValorantMapPlayerProps {
   freezetimeEndedAt?: string // Timestamp when buy phase ended
 }
 
-export default function ValorantMapPlayer({
-  mapName,
-  coordinateTracking,
-  players,
-  team1Id,
-  roundNumber,
-  kills = [],
-  freezetimeEndedAt,
-}: ValorantMapPlayerProps) {
+interface ValorantMapPlayerPropsStatic {
+  mode: 'static'
+  mapName: string
+  staticPositions: StaticPosition[]
+  mapSize?: number // Optional map size (default 400)
+  dotSize?: 'normal' | 'small' // Dot size (default normal)
+}
+
+type ValorantMapPlayerProps = ValorantMapPlayerPropsPlayback | ValorantMapPlayerPropsStatic
+
+export default function ValorantMapPlayer(props: ValorantMapPlayerProps) {
+  // Handle static mode separately
+  if (props.mode === 'static') {
+    return <ValorantMapPlayerStatic {...props} />
+  }
+  
+  // Playback mode (default)
+  const {
+    mapName,
+    coordinateTracking,
+    players,
+    team1Id,
+    roundNumber,
+    kills = [],
+    freezetimeEndedAt,
+  } = props
+  
   const [currentTime, setCurrentTime] = useState(0) // Time offset from start in ms
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
@@ -495,6 +524,93 @@ export default function ValorantMapPlayer({
       {/* Debug info */}
       <div style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>
         {coordinateTracking.length} snapshots | Mode: {coordMode}
+      </div>
+    </div>
+  )
+}
+
+// Static mode component - shows fixed positions without playback
+function ValorantMapPlayerStatic({ mapName, staticPositions, mapSize = 400, dotSize = 'normal' }: ValorantMapPlayerPropsStatic) {
+  // Get map configs from the valorantMapData utility
+  const calloutConfig = useMemo(() => getMapCoordinateConfigFromBounds(mapName), [mapName])
+  const mapAdjustment = useMemo(() => getMapAdjustment(mapName), [mapName])
+  const mapImagePath = `/val-map/${mapName.toLowerCase()}.png`
+
+  // Convert using callout-based multipliers (same as playback mode default)
+  const convertToPercent = useCallback((x: number, y: number): { xPercent: number; yPercent: number } => {
+    const normalizedX = x * calloutConfig.xMultiplier + calloutConfig.xScalarToAdd
+    const normalizedY = y * calloutConfig.yMultiplier + calloutConfig.yScalarToAdd
+    
+    const result = {
+      xPercent: normalizedX * 100,
+      yPercent: normalizedY * 100,
+    }
+    
+    // Apply per-map scale (around center) then offset for fine-tuning
+    const centerX = 50
+    const centerY = 50
+    
+    return {
+      xPercent: centerX + (result.xPercent - centerX) * mapAdjustment.xScale + mapAdjustment.xOffset,
+      yPercent: centerY + (result.yPercent - centerY) * mapAdjustment.yScale + mapAdjustment.yOffset,
+    }
+  }, [calloutConfig, mapAdjustment])
+
+  if (staticPositions.length === 0) {
+    return (
+      <div className={styles.staticContainer} style={{ width: mapSize, height: mapSize }}>
+        <div className={styles.noData}>No positions to display</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.staticContainer} style={{ width: mapSize }}>
+      <div 
+        className={styles.mapContainer}
+        style={{
+          width: mapSize,
+          height: mapSize,
+          transform: mapAdjustment.rotate !== 0
+            ? `rotate(${mapAdjustment.rotate}deg) rotateY(180deg)` 
+            : 'rotateY(180deg)'
+        }}
+      >
+        <Image
+          src={mapImagePath}
+          alt={mapName}
+          width={mapSize}
+          height={mapSize}
+          className={styles.mapImage}
+          priority
+        />
+        
+        {/* Static Position Dots */}
+        {staticPositions.map((pos) => {
+          const { xPercent, yPercent } = convertToPercent(pos.x, pos.y)
+          const dotClass = dotSize === 'small' ? styles.staticDotSmall : styles.staticDot
+          
+          return (
+            <div
+              key={pos.id}
+              className={dotClass}
+              style={{
+                left: `${xPercent}%`,
+                top: `${yPercent}%`,
+              }}
+              title={pos.tooltip || `${pos.label}${pos.percentage ? ` (${Math.round(pos.percentage)}%)` : ''}`}
+            >
+              {dotSize !== 'small' && (
+                <span 
+                  className={styles.staticDotLabel}
+                  style={mapAdjustment.rotate !== 0 ? { transform: `rotate(${mapAdjustment.rotate}deg)` } : undefined}
+                >
+                  {pos.label.slice(0, 3)}
+                </span>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

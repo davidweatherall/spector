@@ -257,6 +257,10 @@ interface GameDataCollector {
 
 function parseValorantEventsFile(content: string): ValorantEventBatch[] {
   const lines = content.split('\n').filter(line => line.trim())
+  return parseValorantEventsFromLines(lines)
+}
+
+function parseValorantEventsFromLines(lines: string[]): ValorantEventBatch[] {
   const batches: ValorantEventBatch[] = []
   
   for (const line of lines) {
@@ -306,6 +310,25 @@ export function convertValorantSeriesData(
   eventsContent: string
 ): ValorantStreamlinedSeries {
   const eventBatches = parseValorantEventsFile(eventsContent)
+  return convertFromBatches(eventBatches)
+}
+
+/**
+ * Convert Valorant GRID events data from pre-parsed lines (for large files)
+ */
+export function convertValorantSeriesDataFromLines(
+  lines: string[]
+): ValorantStreamlinedSeries {
+  const eventBatches = parseValorantEventsFromLines(lines)
+  return convertFromBatches(eventBatches)
+}
+
+/**
+ * Internal conversion from parsed event batches
+ */
+function convertFromBatches(
+  eventBatches: ValorantEventBatch[]
+): ValorantStreamlinedSeries {
   
   if (eventBatches.length === 0) {
     throw new Error('No valid event batches found')
@@ -629,14 +652,22 @@ function extractGamesWithRounds(
         continue
       }
       
-      // During round phase, track coordinates for every event
+      // During round phase, track coordinates (sampled at minimum 100ms intervals to avoid data bloat)
       if (currentGame.inRoundPhase && event.seriesState) {
-        const coords = extractAllPlayerCoordinates(event)
-        if (coords.length > 0) {
-          currentGame.currentRoundCoordinates.push({
-            time: new Date(batch.occurredAt).getTime(),
-            playerCoordinates: coords,
-          })
+        const currentTime = new Date(batch.occurredAt).getTime()
+        const lastCoordTime = currentGame.currentRoundCoordinates.length > 0 
+          ? currentGame.currentRoundCoordinates[currentGame.currentRoundCoordinates.length - 1].time 
+          : 0
+        
+        // Only capture if at least 100ms has passed since last capture
+        if (currentTime - lastCoordTime >= 100) {
+          const coords = extractAllPlayerCoordinates(event)
+          if (coords.length > 0) {
+            currentGame.currentRoundCoordinates.push({
+              time: currentTime,
+              playerCoordinates: coords,
+            })
+          }
         }
         
         // Update any players with unknown characters from later events

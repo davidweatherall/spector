@@ -12,7 +12,7 @@ interface MapFrequency {
 }
 
 /**
- * Agent frequency statistics
+ * Agent frequency statistics with win tracking
  */
 interface AgentFrequency {
   agentId: string
@@ -20,6 +20,8 @@ interface AgentFrequency {
   count: number
   totalGames: number
   percentage: number
+  wins: number
+  winPercentage: number
 }
 
 /**
@@ -220,6 +222,58 @@ export interface ValorantScoutingReport {
     }[]
   } | null
   
+  // Post-Plant Position Analysis (split by plant site A/B/C)
+  postPlant: {
+    byMap: {
+      mapId: string
+      mapName: string
+      totalPlantsOnMap: number
+      bySite: {
+        site: string
+        totalPlants: number
+        players: {
+          playerId: string
+          playerName: string
+          totalPlants: number
+          clusters: {
+            centroidX: number
+            centroidY: number
+            callout: string
+            superRegion: string
+            count: number
+            percentage: number
+            positions: { x: number; y: number }[]
+          }[]
+        }[]
+      }[]
+    }[]
+  } | null
+  
+  // Post-Plant Ability Usage Analysis
+  postPlantAbility: {
+    byMap: {
+      mapId: string
+      mapName: string
+      totalPlants: number
+      players: {
+        playerId: string
+        playerName: string
+        totalPlants: number
+        clusters: {
+          centroidX: number
+          centroidY: number
+          callout: string
+          superRegion: string
+          abilityId: string
+          agentName: string
+          count: number
+          percentage: number
+          positions: { x: number; y: number }[]
+        }[]
+      }[]
+    }[]
+  } | null
+  
   // Series breakdown for detailed view
   seriesBreakdown: {
     seriesId: string
@@ -350,13 +404,13 @@ function calculateFirstBanWhenAvailableFrequencies(
 }
 
 /**
- * Calculate agent frequencies
+ * Calculate agent frequencies (with win tracking)
  */
 function calculateAgentFrequencies(
-  picks: { agentId: string; agentName: string }[],
+  picks: { agentId: string; agentName: string; isWin?: boolean }[],
   totalGames: number
 ): AgentFrequency[] {
-  const counts: { [key: string]: { agentId: string; agentName: string; count: number } } = {}
+  const counts: { [key: string]: { agentId: string; agentName: string; count: number; wins: number } } = {}
   
   for (const pick of picks) {
     if (!counts[pick.agentId]) {
@@ -364,18 +418,24 @@ function calculateAgentFrequencies(
         agentId: pick.agentId,
         agentName: pick.agentName,
         count: 0,
+        wins: 0,
       }
     }
     counts[pick.agentId].count++
+    if (pick.isWin) {
+      counts[pick.agentId].wins++
+    }
   }
   
   return Object.values(counts)
-    .map(({ agentId, agentName, count }) => ({
+    .map(({ agentId, agentName, count, wins }) => ({
       agentId,
       agentName,
       count,
       totalGames,
       percentage: totalGames > 0 ? (count / totalGames) * 100 : 0,
+      wins,
+      winPercentage: count > 0 ? (wins / count) * 100 : 0,
     }))
     .sort((a, b) => b.percentage - a.percentage)
     .slice(0, 15)
@@ -414,11 +474,11 @@ export function aggregateValorantScoutingReport(
   // For each map: { available: number (times not banned by opponent before our first ban), banned: number }
   const mapFirstBanAvailability: { [mapId: string]: { available: number; banned: number } } = {}
   
-  // Collect agent pick data
-  const allAgentPicks: { agentId: string; agentName: string }[] = []
-  const agentPicksByMap: { [mapId: string]: { agentId: string; agentName: string }[] } = {}
+  // Collect agent pick data (with win tracking per agent)
+  const allAgentPicks: { agentId: string; agentName: string; isWin: boolean }[] = []
+  const agentPicksByMap: { [mapId: string]: { agentId: string; agentName: string; isWin: boolean }[] } = {}
   const gamesByMap: { [mapId: string]: number } = {}
-  const playerPicks: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string }[]; games: number; wins: number } } = {}
+  const playerPicks: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string; isWin: boolean }[]; games: number; wins: number } } = {}
   
   // Collect defensive setup data
   // For each map, track formation counts: { formationKey: { superRegions: {...}, count: number } }
@@ -491,6 +551,42 @@ export function aggregateValorantScoutingReport(
   }
   const defensiveAbilityByMap: AbilityMapData = {}
   const offensiveAbilityByMap: AbilityMapData = {}
+  
+  // Collect post-plant ability data
+  type PostPlantAbilityClusterData = { centroidX: number; centroidY: number; callout: string; superRegion: string; abilityId: string; agentName: string; count: number; positions: { x: number; y: number }[] }
+  const postPlantAbilityByMap: {
+    [mapId: string]: {
+      totalPlants: number
+      players: {
+        [playerId: string]: {
+          playerName: string
+          totalPlants: number
+          clusters: PostPlantAbilityClusterData[]
+        }
+      }
+    }
+  } = {}
+  
+  // Collect post-plant data (by site)
+  // map -> site -> player -> clusters[]
+  type PostPlantClusterData = { centroidX: number; centroidY: number; callout: string; superRegion: string; count: number; positions: { x: number; y: number }[] }
+  const postPlantByMap: {
+    [mapId: string]: {
+      totalPlants: number
+      bySite: {
+        [site: string]: {
+          totalPlants: number
+          players: {
+            [playerId: string]: {
+              playerName: string
+              totalPlants: number
+              clusters: PostPlantClusterData[]
+            }
+          }
+        }
+      }
+    }
+  } = {}
   
   // Process each series' analytics
   for (const result of analyticsResults) {
@@ -667,10 +763,21 @@ export function aggregateValorantScoutingReport(
           }
           
           for (const freq of player.agentPicks || []) {
-            for (let i = 0; i < freq.count; i++) {
+            // Push win games first, then losses
+            const wins = freq.wins || 0
+            const losses = freq.count - wins
+            for (let i = 0; i < wins; i++) {
               playerPicks[player.playerId].picks.push({
                 agentId: freq.agentId,
                 agentName: freq.agentName,
+                isWin: true,
+              })
+            }
+            for (let i = 0; i < losses; i++) {
+              playerPicks[player.playerId].picks.push({
+                agentId: freq.agentId,
+                agentName: freq.agentName,
+                isWin: false,
               })
             }
           }
@@ -974,6 +1081,136 @@ export function aggregateValorantScoutingReport(
       if (ourTeamData) {
         mergeAbilityClusters(defensiveAbilityByMap, ourTeamData.defensive || [])
         mergeAbilityClusters(offensiveAbilityByMap, ourTeamData.offensive || [])
+      }
+    }
+    
+    // Get post-plant ability data
+    const postPlantAbilityData = collectAnalyticsData([result], 'postPlantAbilityAnalysis')
+    
+    for (const data of postPlantAbilityData) {
+      const ourTeamData = data.teams?.find((t: any) => t.teamId === teamId)
+      
+      if (ourTeamData) {
+        for (const mapData of ourTeamData.byMap || []) {
+          const mapId = mapData.mapId
+          
+          if (!postPlantAbilityByMap[mapId]) {
+            postPlantAbilityByMap[mapId] = {
+              totalPlants: 0,
+              players: {},
+            }
+          }
+          
+          postPlantAbilityByMap[mapId].totalPlants += mapData.totalPlants || 0
+          
+          for (const player of mapData.players || []) {
+            if (!postPlantAbilityByMap[mapId].players[player.playerId]) {
+              postPlantAbilityByMap[mapId].players[player.playerId] = {
+                playerName: player.playerName,
+                totalPlants: 0,
+                clusters: [],
+              }
+            }
+            
+            postPlantAbilityByMap[mapId].players[player.playerId].totalPlants += player.totalPlants || 0
+            
+            for (const cluster of player.clusters || []) {
+              const existing = postPlantAbilityByMap[mapId].players[player.playerId].clusters.find(
+                c => c.callout === cluster.callout && c.abilityId === cluster.abilityId && c.agentName === cluster.agentName
+              )
+              if (existing) {
+                existing.count += cluster.count
+                existing.positions = [...existing.positions, ...(cluster.positions || [])]
+                if (existing.positions.length > 0) {
+                  existing.centroidX = existing.positions.reduce((sum, p) => sum + p.x, 0) / existing.positions.length
+                  existing.centroidY = existing.positions.reduce((sum, p) => sum + p.y, 0) / existing.positions.length
+                }
+              } else {
+                postPlantAbilityByMap[mapId].players[player.playerId].clusters.push({
+                  centroidX: cluster.centroidX || 0,
+                  centroidY: cluster.centroidY || 0,
+                  callout: cluster.callout,
+                  superRegion: cluster.superRegion,
+                  abilityId: cluster.abilityId,
+                  agentName: cluster.agentName || 'Unknown',
+                  count: cluster.count,
+                  positions: cluster.positions || [],
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Get post-plant data (by site)
+    const postPlantData = collectAnalyticsData([result], 'postPlantAnalysis')
+    
+    for (const data of postPlantData) {
+      const ourTeamData = data.teams?.find((t: any) => t.teamId === teamId)
+      
+      if (ourTeamData) {
+        for (const mapData of ourTeamData.byMap || []) {
+          const mapId = mapData.mapId
+          
+          if (!postPlantByMap[mapId]) {
+            postPlantByMap[mapId] = {
+              totalPlants: 0,
+              bySite: {},
+            }
+          }
+          
+          postPlantByMap[mapId].totalPlants += mapData.totalPlantsOnMap || 0
+          
+          for (const siteData of mapData.bySite || []) {
+            const site = siteData.site
+            
+            if (!postPlantByMap[mapId].bySite[site]) {
+              postPlantByMap[mapId].bySite[site] = {
+                totalPlants: 0,
+                players: {},
+              }
+            }
+            
+            postPlantByMap[mapId].bySite[site].totalPlants += siteData.totalPlants || 0
+            
+            for (const player of siteData.players || []) {
+              if (!postPlantByMap[mapId].bySite[site].players[player.playerId]) {
+                postPlantByMap[mapId].bySite[site].players[player.playerId] = {
+                  playerName: player.playerName,
+                  totalPlants: 0,
+                  clusters: [],
+                }
+              }
+              
+              postPlantByMap[mapId].bySite[site].players[player.playerId].totalPlants += player.totalPlants || 0
+              
+              // Merge clusters
+              for (const cluster of player.clusters || []) {
+                const existing = postPlantByMap[mapId].bySite[site].players[player.playerId].clusters.find(
+                  c => c.callout === cluster.callout
+                )
+                if (existing) {
+                  existing.count += cluster.count
+                  existing.positions = [...existing.positions, ...(cluster.positions || [])]
+                  if (existing.positions.length > 0) {
+                    existing.centroidX = existing.positions.reduce((sum, p) => sum + p.x, 0) / existing.positions.length
+                    existing.centroidY = existing.positions.reduce((sum, p) => sum + p.y, 0) / existing.positions.length
+                  }
+                } else {
+                  postPlantByMap[mapId].bySite[site].players[player.playerId].clusters.push({
+                    centroidX: cluster.centroidX || 0,
+                    centroidY: cluster.centroidY || 0,
+                    callout: cluster.callout,
+                    superRegion: cluster.superRegion,
+                    count: cluster.count,
+                    positions: cluster.positions || [],
+                  })
+                }
+              }
+            }
+          }
+        }
       }
     }
 
@@ -1370,6 +1607,67 @@ export function aggregateValorantScoutingReport(
                 .map(c => ({
                   ...c,
                   percentage: data.totalRounds > 0 ? (c.count / data.totalRounds) * 100 : 0,
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10),
+            }))
+            .filter(p => p.clusters.length > 0)
+            .sort((a, b) => a.playerName.localeCompare(b.playerName)),
+        }))
+        .filter(m => m.players.length > 0)
+        .sort((a, b) => a.mapName.localeCompare(b.mapName)),
+    } : null,
+    
+    // Post-Plant Positions (by site)
+    postPlant: Object.keys(postPlantByMap).length > 0 ? {
+      byMap: Object.entries(postPlantByMap)
+        .map(([mapId, mapData]) => ({
+          mapId,
+          mapName: formatMapName(mapId),
+          totalPlantsOnMap: mapData.totalPlants,
+          bySite: Object.entries(mapData.bySite)
+            .map(([site, siteData]) => ({
+              site,
+              totalPlants: siteData.totalPlants,
+              players: Object.entries(siteData.players)
+                .map(([playerId, data]) => ({
+                  playerId,
+                  playerName: data.playerName,
+                  totalPlants: data.totalPlants,
+                  clusters: data.clusters
+                    .map(c => ({
+                      ...c,
+                      percentage: data.totalPlants > 0 ? (c.count / data.totalPlants) * 100 : 0,
+                    }))
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 5),
+                }))
+                .filter(p => p.clusters.length > 0)
+                .sort((a, b) => a.playerName.localeCompare(b.playerName)),
+            }))
+            .filter(s => s.players.length > 0)
+            .sort((a, b) => a.site.localeCompare(b.site)),
+        }))
+        .filter(m => m.bySite.length > 0)
+        .sort((a, b) => a.mapName.localeCompare(b.mapName)),
+    } : null,
+    
+    // Post-Plant Ability Usage
+    postPlantAbility: Object.keys(postPlantAbilityByMap).length > 0 ? {
+      byMap: Object.entries(postPlantAbilityByMap)
+        .map(([mapId, mapData]) => ({
+          mapId,
+          mapName: formatMapName(mapId),
+          totalPlants: mapData.totalPlants,
+          players: Object.entries(mapData.players)
+            .map(([playerId, data]) => ({
+              playerId,
+              playerName: data.playerName,
+              totalPlants: data.totalPlants,
+              clusters: data.clusters
+                .map(c => ({
+                  ...c,
+                  percentage: data.totalPlants > 0 ? (c.count / data.totalPlants) * 100 : 0,
                 }))
                 .sort((a, b) => b.count - a.count)
                 .slice(0, 10),

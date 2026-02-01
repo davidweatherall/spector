@@ -1,8 +1,8 @@
 /**
- * Ability Usage Analysis
+ * Post-Plant Ability Usage Analysis
  * 
- * Tracks ability usage positions before and within 5 seconds of freeze time ending.
- * Clusters positions to find common ability usage spots.
+ * Tracks ability usage around bomb plant time (5 seconds before to 15 seconds after).
+ * Only for the attacking team on rounds where the bomb was planted.
  */
 
 import { ValorantStreamlinedSeries, ValorantRound } from '../utils/valorantSeriesConverter'
@@ -13,7 +13,8 @@ import { ValorantAnalyticsResult } from './types'
 // TYPES
 // ============================================================================
 
-const ABILITY_WINDOW_AFTER_MS = 25000 // Track abilities up to 25 seconds after freeze end
+const PLANT_ABILITY_BEFORE_MS = 5000 // Track abilities 5 seconds before plant
+const PLANT_ABILITY_AFTER_MS = 15000 // Track abilities 15 seconds after plant
 const CLUSTER_RADIUS = 300 // Units to consider positions as "same spot"
 
 interface RawPosition {
@@ -28,7 +29,7 @@ interface AbilityPosition {
   agentName: string
 }
 
-export interface AbilityCluster {
+export interface PostPlantAbilityCluster {
   centroidX: number
   centroidY: number
   callout: string
@@ -40,29 +41,29 @@ export interface AbilityCluster {
   positions: { x: number; y: number }[]
 }
 
-export interface PlayerAbilityData {
+export interface PlayerPostPlantAbilityData {
   playerId: string
   playerName: string
-  totalRounds: number
-  clusters: AbilityCluster[]
+  totalPlants: number // Number of rounds with plants this player was in
+  clusters: PostPlantAbilityCluster[]
 }
 
-export interface MapAbilityPositions {
+export interface MapPostPlantAbilityPositions {
   mapId: string
   mapName: string
-  players: PlayerAbilityData[]
+  totalPlants: number
+  players: PlayerPostPlantAbilityData[]
 }
 
-export interface TeamAbilityAnalysis {
+export interface TeamPostPlantAbilityAnalysis {
   teamId: string
   teamName: string
-  defensive: MapAbilityPositions[]
-  offensive: MapAbilityPositions[]
+  byMap: MapPostPlantAbilityPositions[]
 }
 
-export interface AbilityUsageAnalysisResult {
-  team1: TeamAbilityAnalysis
-  team2: TeamAbilityAnalysis
+export interface PostPlantAbilityAnalysisResult {
+  team1: TeamPostPlantAbilityAnalysis
+  team2: TeamPostPlantAbilityAnalysis
 }
 
 // ============================================================================
@@ -98,12 +99,10 @@ function clusterAbilityPositions(positions: AbilityPosition[], radius: number): 
     let foundCluster = false
     
     for (const cluster of clusters) {
-      // Must be same ability AND same agent AND within radius
       if (cluster.abilityId === pos.abilityId && 
           cluster.agentName === pos.agentName &&
           distance(pos.x, pos.y, cluster.centroidX, cluster.centroidY) <= radius) {
         cluster.positions.push({ x: pos.x, y: pos.y })
-        // Update centroid
         const n = cluster.positions.length
         cluster.centroidX = cluster.positions.reduce((sum, p) => sum + p.x, 0) / n
         cluster.centroidY = cluster.positions.reduce((sum, p) => sum + p.y, 0) / n
@@ -127,10 +126,17 @@ function clusterAbilityPositions(positions: AbilityPosition[], radius: number): 
 }
 
 /**
- * Get ability usages (any time before freeze end + up to 25 seconds after)
+ * Check if a round has a bomb plant
+ */
+function hasPlant(round: ValorantRound): boolean {
+  return !!round.bombPlant
+}
+
+/**
+ * Get ability usages around plant time (5 seconds before to 15 seconds after)
  * Only tracks the first usage of each ability type per round
  */
-function getAbilityUsages(
+function getPostPlantAbilityUsages(
   round: ValorantRound,
   playerId: string,
   agentName: string
@@ -138,12 +144,14 @@ function getAbilityUsages(
   const abilityUsages = round.abilityUsages || []
   if (abilityUsages.length === 0) return []
   
-  if (!round.freezetimeEndedAt) {
+  // Check if bomb was planted
+  if (!round.bombPlant || !round.bombPlant.occurredAt) {
     return []
   }
   
-  const freezeEndTime = new Date(round.freezetimeEndedAt).getTime()
-  const windowEnd = freezeEndTime + ABILITY_WINDOW_AFTER_MS
+  const plantTime = new Date(round.bombPlant.occurredAt).getTime()
+  const windowStart = plantTime - PLANT_ABILITY_BEFORE_MS
+  const windowEnd = plantTime + PLANT_ABILITY_AFTER_MS
   
   const relevantAbilities: AbilityPosition[] = []
   const seenAbilities = new Set<string>()
@@ -153,8 +161,8 @@ function getAbilityUsages(
     
     const usageTime = new Date(usage.occurredAt).getTime()
     
-    // Include abilities used any time before freeze end OR up to 25 seconds after
-    if (usageTime <= windowEnd) {
+    // Include abilities used within the plant window
+    if (usageTime >= windowStart && usageTime <= windowEnd) {
       if (seenAbilities.has(usage.abilityId)) continue
       
       if (usage.position && (usage.position.x !== 0 || usage.position.y !== 0)) {
@@ -172,34 +180,85 @@ function getAbilityUsages(
   return relevantAbilities
 }
 
-
 // ============================================================================
 // MAIN ANALYSIS
 // ============================================================================
 
-function buildAbilityMapData(
-  abilityByMapPlayer: {
+export function analyzePostPlantAbility(
+  series: ValorantStreamlinedSeries,
+  teamId: string
+): TeamPostPlantAbilityAnalysis {
+  const team = series.teams.find(t => t.id === teamId)
+  const teamName = team?.name || 'Unknown Team'
+  
+  // Track: map -> { totalPlants, players -> { playerName, totalPlants, abilities[] } }
+  const abilityByMap: {
     [mapId: string]: {
-      [playerId: string]: {
-        playerName: string
-        totalRounds: number
-        abilities: AbilityPosition[]
+      totalPlants: number
+      players: {
+        [playerId: string]: {
+          playerName: string
+          totalPlants: number
+          abilities: AbilityPosition[]
+        }
+      }
+    }
+  } = {}
+  
+  for (const game of series.games) {
+    const mapId = game.mapId
+    if (!abilityByMap[mapId]) {
+      abilityByMap[mapId] = {
+        totalPlants: 0,
+        players: {},
+      }
+    }
+    
+    const teamPlayers = game.players.filter(p => p.teamId === teamId)
+    
+    for (const round of game.rounds) {
+      // Only attack rounds with plants
+      const teamSide = round.teamSides.find(ts => ts.teamId === teamId)
+      if (!teamSide || teamSide.side !== 'attacker') continue
+      if (!hasPlant(round)) continue
+      
+      // Count this plant for the map
+      abilityByMap[mapId].totalPlants++
+      
+      for (const player of teamPlayers) {
+        const agentName = player.characterId || 'Unknown'
+        
+        if (!abilityByMap[mapId].players[player.id]) {
+          abilityByMap[mapId].players[player.id] = {
+            playerName: player.name,
+            totalPlants: 0,
+            abilities: [],
+          }
+        }
+        
+        abilityByMap[mapId].players[player.id].totalPlants++
+        const abilities = getPostPlantAbilityUsages(round, player.id, agentName)
+        abilityByMap[mapId].players[player.id].abilities.push(...abilities)
       }
     }
   }
-): MapAbilityPositions[] {
-  const byMap: MapAbilityPositions[] = []
   
-  for (const [mapId, playerData] of Object.entries(abilityByMapPlayer)) {
-    const players: PlayerAbilityData[] = []
+  // Build output with clustering
+  const byMap: MapPostPlantAbilityPositions[] = []
+  
+  for (const [mapId, mapData] of Object.entries(abilityByMap)) {
+    if (mapData.totalPlants === 0) continue
     
-    for (const [playerId, data] of Object.entries(playerData)) {
-      if (data.abilities.length < 2) continue
+    const players: PlayerPostPlantAbilityData[] = []
+    
+    for (const [playerId, data] of Object.entries(mapData.players)) {
+      // No minimum - track all abilities
+      if (data.abilities.length === 0) continue
       
       const clusters = clusterAbilityPositions(data.abilities, CLUSTER_RADIUS)
       
-      const abilityClusters: AbilityCluster[] = clusters
-        .filter(c => c.positions.length >= 2)
+      const abilityClusters: PostPlantAbilityCluster[] = clusters
+        .filter(c => c.positions.length >= 2) // Only show if same ability used 2+ times in same spot
         .map(c => {
           const callout = getClosestCalloutData(mapId, c.centroidX, c.centroidY)
           return {
@@ -210,7 +269,7 @@ function buildAbilityMapData(
             abilityId: c.abilityId,
             agentName: c.agentName,
             count: c.positions.length,
-            percentage: (c.positions.length / data.totalRounds) * 100,
+            percentage: (c.positions.length / data.totalPlants) * 100,
             positions: c.positions,
           }
         })
@@ -221,7 +280,7 @@ function buildAbilityMapData(
         players.push({
           playerId,
           playerName: data.playerName,
-          totalRounds: data.totalRounds,
+          totalPlants: data.totalPlants,
           clusters: abilityClusters,
         })
       }
@@ -233,127 +292,46 @@ function buildAbilityMapData(
       byMap.push({
         mapId,
         mapName: formatMapName(mapId),
+        totalPlants: mapData.totalPlants,
         players,
       })
     }
   }
   
   byMap.sort((a, b) => a.mapName.localeCompare(b.mapName))
-  return byMap
-}
-
-export function analyzeAbilityUsage(
-  series: ValorantStreamlinedSeries,
-  teamId: string
-): TeamAbilityAnalysis {
-  const team = series.teams.find(t => t.id === teamId)
-  const teamName = team?.name || 'Unknown Team'
-  
-  // Track defensive abilities: map -> player -> ability positions[]
-  const defensiveByMapPlayer: {
-    [mapId: string]: {
-      [playerId: string]: {
-        playerName: string
-        totalRounds: number
-        abilities: AbilityPosition[]
-      }
-    }
-  } = {}
-  
-  // Track offensive abilities: map -> player -> ability positions[]
-  const offensiveByMapPlayer: {
-    [mapId: string]: {
-      [playerId: string]: {
-        playerName: string
-        totalRounds: number
-        abilities: AbilityPosition[]
-      }
-    }
-  } = {}
-  
-  for (const game of series.games) {
-    const mapId = game.mapId
-    if (!defensiveByMapPlayer[mapId]) {
-      defensiveByMapPlayer[mapId] = {}
-    }
-    if (!offensiveByMapPlayer[mapId]) {
-      offensiveByMapPlayer[mapId] = {}
-    }
-    
-    const teamPlayers = game.players.filter(p => p.teamId === teamId)
-    
-    for (const round of game.rounds) {
-      const teamSide = round.teamSides.find(ts => ts.teamId === teamId)
-      if (!teamSide) continue
-      
-      for (const player of teamPlayers) {
-        const agentName = player.characterId || 'Unknown'
-        
-        if (teamSide.side === 'defender') {
-          // Defensive round
-          if (!defensiveByMapPlayer[mapId][player.id]) {
-            defensiveByMapPlayer[mapId][player.id] = {
-              playerName: player.name,
-              totalRounds: 0,
-              abilities: [],
-            }
-          }
-          
-          defensiveByMapPlayer[mapId][player.id].totalRounds++
-          const abilities = getAbilityUsages(round, player.id, agentName)
-          defensiveByMapPlayer[mapId][player.id].abilities.push(...abilities)
-        } else if (teamSide.side === 'attacker') {
-          // Offensive round
-          if (!offensiveByMapPlayer[mapId][player.id]) {
-            offensiveByMapPlayer[mapId][player.id] = {
-              playerName: player.name,
-              totalRounds: 0,
-              abilities: [],
-            }
-          }
-          
-          offensiveByMapPlayer[mapId][player.id].totalRounds++
-          const abilities = getAbilityUsages(round, player.id, agentName)
-          offensiveByMapPlayer[mapId][player.id].abilities.push(...abilities)
-        }
-      }
-    }
-  }
   
   return {
     teamId,
     teamName,
-    defensive: buildAbilityMapData(defensiveByMapPlayer),
-    offensive: buildAbilityMapData(offensiveByMapPlayer),
+    byMap,
   }
 }
 
-export function runAbilityUsageAnalysis(
+export function runPostPlantAbilityAnalysis(
   series: ValorantStreamlinedSeries
-): AbilityUsageAnalysisResult {
+): PostPlantAbilityAnalysisResult {
   const [team1, team2] = series.teams
   
   return {
-    team1: analyzeAbilityUsage(series, team1?.id || ''),
-    team2: analyzeAbilityUsage(series, team2?.id || ''),
+    team1: analyzePostPlantAbility(series, team1?.id || ''),
+    team2: analyzePostPlantAbility(series, team2?.id || ''),
   }
 }
 
 /**
  * Analytics function for the analytics runner
  */
-export function abilityUsageAnalysis(series: ValorantStreamlinedSeries): ValorantAnalyticsResult | null {
-  const result = runAbilityUsageAnalysis(series)
+export function postPlantAbilityAnalysis(series: ValorantStreamlinedSeries): ValorantAnalyticsResult | null {
+  const result = runPostPlantAbilityAnalysis(series)
   
-  const hasData = result.team1.defensive.length > 0 || result.team2.defensive.length > 0 ||
-                  result.team1.offensive.length > 0 || result.team2.offensive.length > 0
+  const hasData = result.team1.byMap.length > 0 || result.team2.byMap.length > 0
   if (!hasData) {
     return null
   }
   
   return {
-    name: 'abilityUsageAnalysis',
-    description: 'Analyzes common ability usage positions on defense and offense',
+    name: 'postPlantAbilityAnalysis',
+    description: 'Analyzes ability usage around bomb plant time',
     data: {
       teams: [result.team1, result.team2],
     },

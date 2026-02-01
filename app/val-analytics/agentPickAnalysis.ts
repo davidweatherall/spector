@@ -2,7 +2,7 @@ import { ValorantStreamlinedSeries, ValorantGame, GamePlayer } from '../utils/va
 import { ValorantAnalyticsResult } from './types'
 
 /**
- * Agent pick frequency
+ * Agent pick frequency with win rate
  */
 interface AgentFrequency {
   agentId: string
@@ -10,6 +10,8 @@ interface AgentFrequency {
   count: number
   totalGames: number
   percentage: number
+  wins: number
+  winPercentage: number
 }
 
 /**
@@ -101,13 +103,13 @@ function formatAgentName(agentId: string): string {
 }
 
 /**
- * Calculate agent frequencies from picks
+ * Calculate agent frequencies from picks (with optional win tracking)
  */
 function calculateAgentFrequencies(
-  picks: { agentId: string; agentName: string }[],
+  picks: { agentId: string; agentName: string; isWin?: boolean }[],
   totalGames: number
 ): AgentFrequency[] {
-  const counts: { [key: string]: { agentId: string; agentName: string; count: number } } = {}
+  const counts: { [key: string]: { agentId: string; agentName: string; count: number; wins: number } } = {}
   
   for (const pick of picks) {
     if (!counts[pick.agentId]) {
@@ -115,18 +117,24 @@ function calculateAgentFrequencies(
         agentId: pick.agentId,
         agentName: pick.agentName || formatAgentName(pick.agentId),
         count: 0,
+        wins: 0,
       }
     }
     counts[pick.agentId].count++
+    if (pick.isWin) {
+      counts[pick.agentId].wins++
+    }
   }
   
   return Object.values(counts)
-    .map(({ agentId, agentName, count }) => ({
+    .map(({ agentId, agentName, count, wins }) => ({
       agentId,
       agentName,
       count,
       totalGames,
       percentage: totalGames > 0 ? (count / totalGames) * 100 : 0,
+      wins,
+      winPercentage: count > 0 ? (wins / count) * 100 : 0,
     }))
     .sort((a, b) => b.count - a.count)
 }
@@ -140,9 +148,9 @@ function analyzeTeamAgentPicks(
   games: ValorantGame[]
 ): TeamAgentAnalysis {
   // Collect all agent picks by this team across all games
-  const allPicks: { agentId: string; agentName: string }[] = []
-  const picksByMap: { [mapId: string]: { agentId: string; agentName: string }[] } = {}
-  const picksByPlayer: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string }[]; games: number; wins: number } } = {}
+  const allPicks: { agentId: string; agentName: string; isWin: boolean }[] = []
+  const picksByMap: { [mapId: string]: { agentId: string; agentName: string; isWin: boolean }[] } = {}
+  const picksByPlayer: { [playerId: string]: { playerName: string; picks: { agentId: string; agentName: string; isWin: boolean }[]; games: number; wins: number } } = {}
   const gamesByMap: { [mapId: string]: number } = {}
   const gameDetails: GameDetail[] = []
   
@@ -168,6 +176,7 @@ function analyzeTeamAgentPicks(
       const pickData = {
         agentId: player.characterId,
         agentName: player.characterName,
+        isWin,
       }
       
       // Add to overall picks

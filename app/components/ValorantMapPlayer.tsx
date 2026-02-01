@@ -556,14 +556,6 @@ function ValorantMapPlayerStatic({ mapName, staticPositions, mapSize = 400, dotS
     }
   }, [calloutConfig, mapAdjustment])
 
-  if (staticPositions.length === 0) {
-    return (
-      <div className={styles.staticContainer} style={{ width: mapSize, height: mapSize }}>
-        <div className={styles.noData}>No positions to display</div>
-      </div>
-    )
-  }
-
   return (
     <div className={styles.staticContainer} style={{ width: mapSize }}>
       <div 

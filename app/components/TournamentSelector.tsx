@@ -75,7 +75,7 @@ interface ValorantScoutingReport {
       mapId: string
       mapName: string
       gamesPlayed: number
-      agentPicks: { agentId: string; agentName: string; count: number; percentage: number }[]
+      agentPicks: { agentId: string; agentName: string; count: number; percentage: number; wins: number; winPercentage: number }[]
     }[]
     playerPreferences: {
       playerId: string
@@ -83,7 +83,7 @@ interface ValorantScoutingReport {
       totalMapsPlayed: number
       wins: number
       winPercentage: number
-      agentPicks: { agentId: string; agentName: string; count: number; percentage: number }[]
+      agentPicks: { agentId: string; agentName: string; count: number; percentage: number; wins: number; winPercentage: number }[]
     }[]
   } | null
   defensiveSetups: {
@@ -208,6 +208,31 @@ interface ValorantScoutingReport {
       }[]
     }[]
   } | null
+  postPlant: {
+    byMap: {
+      mapId: string
+      mapName: string
+      totalPlantsOnMap: number
+      bySite: {
+        site: string
+        totalPlants: number
+        players: {
+          playerId: string
+          playerName: string
+          totalPlants: number
+          clusters: {
+            centroidX: number
+            centroidY: number
+            callout: string
+            superRegion: string
+            count: number
+            percentage: number
+            positions: { x: number; y: number }[]
+          }[]
+        }[]
+      }[]
+    }[]
+  } | null
   seriesBreakdown: {
     seriesId: string
     opponent: string
@@ -254,12 +279,17 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const [valScoutingReport, setValScoutingReport] = useState<ValorantScoutingReport | null>(null)
   const [scoutingError, setScoutingError] = useState<string | null>(null)
   const [selectedValMapTab, setSelectedValMapTab] = useState<string | null>(null)
+  const [selectedPerMapTab, setSelectedPerMapTab] = useState<string | null>(null) // Unified per-map selector
   const [selectedPlayerPosMap, setSelectedPlayerPosMap] = useState<string | null>(null)
-  const [selectedPlayerPositions, setSelectedPlayerPositions] = useState<Set<string>>(new Set())
+  const [selectedPlayerPositions, setSelectedPlayerPositions] = useState<Set<string> | null>(null)
   const [selectedDefAbilityMap, setSelectedDefAbilityMap] = useState<string | null>(null)
-  const [selectedDefAbilities, setSelectedDefAbilities] = useState<Set<string>>(new Set())
+  const [selectedDefAbilities, setSelectedDefAbilities] = useState<Set<string> | null>(null)
   const [selectedOffAbilityMap, setSelectedOffAbilityMap] = useState<string | null>(null)
-  const [selectedOffAbilities, setSelectedOffAbilities] = useState<Set<string>>(new Set())
+  const [selectedOffAbilities, setSelectedOffAbilities] = useState<Set<string> | null>(null)
+  const [selectedPostPlantMap, setSelectedPostPlantMap] = useState<string | null>(null)
+  const [selectedPostPlantSite, setSelectedPostPlantSite] = useState<string | null>(null)
+  const [selectedPostPlantPositions, setSelectedPostPlantPositions] = useState<Set<string> | null>(null)
+  const [selectedMapAnalysisTab, setSelectedMapAnalysisTab] = useState<'positions' | 'defAbility' | 'offAbility' | 'postPlant'>('positions')
   const [customGameCount, setCustomGameCount] = useState<string>('10')
   const [selectedGoldLeadRole, setSelectedGoldLeadRole] = useState<'top' | 'jungle' | 'mid' | 'bot' | 'support'>('mid')
   const [selectedCounterPickTab, setSelectedCounterPickTab] = useState<'top-cp' | 'top-cpd' | 'mid-cp' | 'mid-cpd'>('mid-cp')
@@ -543,12 +573,16 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
     
     // Clear previous report and related state
     setValScoutingReport(null)
+    setSelectedPerMapTab(null)
     setSelectedPlayerPosMap(null)
-    setSelectedPlayerPositions(new Set())
+    setSelectedPlayerPositions(null)
     setSelectedDefAbilityMap(null)
-    setSelectedDefAbilities(new Set())
+    setSelectedDefAbilities(null)
     setSelectedOffAbilityMap(null)
-    setSelectedOffAbilities(new Set())
+    setSelectedOffAbilities(null)
+    setSelectedPostPlantMap(null)
+    setSelectedPostPlantSite(null)
+    setSelectedPostPlantPositions(null)
     
     // Apply limit if specified
     const gamesToAnalyze = limit ? games.slice(0, limit) : games
@@ -1914,66 +1948,6 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                 </div>
               </div>
               
-              {/* Agent Picks by Map */}
-              {valScoutingReport.agentStats.picksByMap.length > 0 && (
-                <div className={styles.valAgentByMap}>
-                  <div className={styles.banSectionLabel}>Agent Picks by Map</div>
-                  
-                  {/* Map Tabs */}
-                  <div className={styles.valMapTabs}>
-                    {valScoutingReport.agentStats.picksByMap.map((mapData) => (
-                      <button
-                        key={mapData.mapId}
-                        className={`${styles.valMapTab} ${selectedValMapTab === mapData.mapId ? styles.valMapTabActive : ''}`}
-                        onClick={() => setSelectedValMapTab(mapData.mapId)}
-                      >
-                        {mapData.mapName}
-                        <span className={styles.valMapTabCount}>({mapData.gamesPlayed})</span>
-                      </button>
-                    ))}
-                  </div>
-                  
-                  {/* Selected Map Agent Picks */}
-                  {selectedValMapTab && (() => {
-                    const selectedMapData = valScoutingReport.agentStats?.picksByMap.find(
-                      (m) => m.mapId === selectedValMapTab
-                    )
-                    if (!selectedMapData) return null
-                    
-                    return (
-                      <div className={styles.valAgentMapContent}>
-                        <div className={styles.valAgentGrid}>
-                          {selectedMapData.agentPicks.slice(0, 10).map((agent) => (
-                            <div key={agent.agentId} className={styles.valAgentCard}>
-                              <Image
-                                src={getAgentImagePath(agent.agentName)}
-                                alt={agent.agentName}
-                                width={36}
-                                height={36}
-                                className={styles.valAgentImage}
-                                unoptimized
-                              />
-                              <div className={styles.valAgentInfo}>
-                                <span className={styles.valAgentName}>{agent.agentName}</span>
-                                <span className={styles.valAgentStats}>
-                                  {Math.round(agent.percentage)}% ({agent.count} picks)
-                                </span>
-                              </div>
-                              <div className={styles.valAgentBarContainer}>
-                                <div 
-                                  className={styles.valAgentBar}
-                                  style={{ width: `${agent.percentage}%` }}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
-              )}
-              
               {/* Player Agent Preferences */}
               {valScoutingReport.agentStats.playerPreferences.length > 0 && (
                 <div className={styles.valPlayerPrefs}>
@@ -1981,27 +1955,30 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                   <div className={styles.valPlayerTable}>
                     <div className={styles.valPlayerTableHeader}>
                       <span className={styles.valPlayerColPlayer}>Player</span>
-                      <span className={styles.valPlayerColMaps}>Maps</span>
-                      <span className={styles.valPlayerColWin}>Win %</span>
-                      <span className={styles.valPlayerColAgents}>Top Agents</span>
+                      <span className={styles.valPlayerColAgentsExpanded}>Agent Breakdown</span>
                     </div>
-                    {valScoutingReport.agentStats.playerPreferences.map((player) => (
+                    {[...valScoutingReport.agentStats.playerPreferences]
+                      .sort((a, b) => b.totalMapsPlayed - a.totalMapsPlayed)
+                      .map((player) => (
                       <div key={player.playerId} className={styles.valPlayerRow}>
-                        <span className={styles.valPlayerColPlayer}>{player.playerName}</span>
-                        <span className={styles.valPlayerColMaps}>{player.totalMapsPlayed}</span>
-                        <span className={styles.valPlayerColWin}>{Math.round(player.winPercentage)}%</span>
-                        <div className={styles.valPlayerColAgents}>
-                          {player.agentPicks.slice(0, 4).map((agent) => (
-                            <div key={agent.agentId} className={styles.valPlayerAgentChip}>
+                        <span className={styles.valPlayerColPlayer}>
+                          {player.playerName}
+                          <span className={styles.valPlayerGamesCount}>({player.totalMapsPlayed} games)</span>
+                        </span>
+                        <div className={styles.valPlayerColAgentsExpanded}>
+                          {player.agentPicks.map((agent) => (
+                            <div key={agent.agentId} className={styles.valPlayerAgentChipExpanded}>
                               <Image
                                 src={getAgentImagePath(agent.agentName)}
                                 alt={agent.agentName}
-                                width={20}
-                                height={20}
+                                width={24}
+                                height={24}
                                 className={styles.valPlayerAgentImg}
                                 unoptimized
                               />
-                              <span className={styles.valPlayerAgentPercent}>{Math.round(agent.percentage)}%</span>
+                              <span className={styles.valPlayerAgentName}>{agent.agentName}</span>
+                              <span className={styles.valPlayerAgentPick}>{Math.round(agent.percentage)}% pick</span>
+                              <span className={styles.valPlayerAgentWin}>{Math.round(agent.winPercentage)}% win</span>
                             </div>
                           ))}
                         </div>
@@ -2013,22 +1990,133 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
             </div>
           )}
           
-          {/* Defensive Setups Section */}
-          {valScoutingReport.defensiveSetups && valScoutingReport.defensiveSetups.byMap.length > 0 && (
-            <div className={styles.scoutingSection}>
-              <h4 className={styles.sectionTitle}>
-                Defensive Setups ({valScoutingReport.defensiveSetups.totalDefensiveRounds} rounds)
-                <span className={styles.sectionSubtitle}>Player positions when freeze time ends</span>
-              </h4>
-              
-              <div className={styles.valDefenseMapsGrid}>
-                {valScoutingReport.defensiveSetups.byMap.map((mapData) => (
-                  <div key={mapData.mapId} className={styles.valDefenseMapSection}>
-                    <div className={styles.valDefenseMapHeader}>
-                      {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
+          {/* Per Map Stats Section */}
+          {(() => {
+            // Collect all available maps from various sources
+            const allMaps: { mapId: string; mapName: string; sampleSize: number }[] = []
+            
+            // From defensive setups
+            valScoutingReport.defensiveSetups?.byMap.forEach(m => {
+              if (!allMaps.find(x => x.mapId === m.mapId)) {
+                allMaps.push({ mapId: m.mapId, mapName: m.mapName, sampleSize: m.totalRounds })
+              }
+            })
+            
+            // From offensive setups
+            valScoutingReport.offensiveSetups?.byMap.forEach(m => {
+              const existing = allMaps.find(x => x.mapId === m.mapId)
+              if (existing) {
+                existing.sampleSize += m.totalRounds
+              } else {
+                allMaps.push({ mapId: m.mapId, mapName: m.mapName, sampleSize: m.totalRounds })
+              }
+            })
+            
+            // From agent picks by map
+            valScoutingReport.agentStats?.picksByMap.forEach(m => {
+              const existing = allMaps.find(x => x.mapId === m.mapId)
+              if (existing) {
+                existing.sampleSize += m.gamesPlayed * 10 // Weight games more
+              } else {
+                allMaps.push({ mapId: m.mapId, mapName: m.mapName, sampleSize: m.gamesPlayed * 10 })
+              }
+            })
+            
+            if (allMaps.length === 0) return null
+            
+            // Sort alphabetically for display, but default to largest sample
+            const sortedAlphabetically = [...allMaps].sort((a, b) => a.mapName.localeCompare(b.mapName))
+            const largestSampleMap = [...allMaps].sort((a, b) => b.sampleSize - a.sampleSize)[0]
+            const currentMapId = selectedPerMapTab || largestSampleMap?.mapId || sortedAlphabetically[0]?.mapId
+            
+            // Get data for current map from each source
+            const defensiveMapData = valScoutingReport.defensiveSetups?.byMap.find(m => m.mapId === currentMapId)
+            const offensiveMapData = valScoutingReport.offensiveSetups?.byMap.find(m => m.mapId === currentMapId)
+            const agentPicksMapData = valScoutingReport.agentStats?.picksByMap.find(m => m.mapId === currentMapId)
+            const economyDefBuyMapData = valScoutingReport.economySetups?.defensive.buy.byMap.find(m => m.mapId === currentMapId)
+            const economyDefEcoMapData = valScoutingReport.economySetups?.defensive.eco.byMap.find(m => m.mapId === currentMapId)
+            const economyOffBuyMapData = valScoutingReport.economySetups?.offensive.buy.byMap.find(m => m.mapId === currentMapId)
+            const economyOffEcoMapData = valScoutingReport.economySetups?.offensive.eco.byMap.find(m => m.mapId === currentMapId)
+            const playerPositionsMapData = valScoutingReport.playerPositions?.byMap.find(m => m.mapId === currentMapId)
+            const lurkerMapData = valScoutingReport.lurkerStats?.byMap.find(m => m.mapId === currentMapId)
+            const defAbilityMapData = valScoutingReport.abilityUsage?.defensive.find(m => m.mapId === currentMapId)
+            const offAbilityMapData = valScoutingReport.abilityUsage?.offensive.find(m => m.mapId === currentMapId)
+            const postPlantMapData = valScoutingReport.postPlant?.byMap.find(m => m.mapId === currentMapId)
+            
+            return (
+              <div className={styles.valPerMapSection}>
+                {/* Header with Map Selector */}
+                <div className={styles.valPerMapHeader}>
+                  <div className={styles.valPerMapTitle}>
+                    <span className={styles.valPerMapTitleIcon}>📍</span>
+                    Per Map Stats
+                  </div>
+                  <div className={styles.valPerMapSelector}>
+                    {sortedAlphabetically.map((mapData) => (
+                      <button
+                        key={mapData.mapId}
+                        className={`${styles.valPerMapBtn} ${mapData.mapId === currentMapId ? styles.valPerMapBtnActive : ''}`}
+                        onClick={() => {
+                          setSelectedPerMapTab(mapData.mapId)
+                          // Reset selections to null so new map gets default first-item selection
+                          setSelectedPlayerPositions(null)
+                          setSelectedDefAbilities(null)
+                          setSelectedOffAbilities(null)
+                          setSelectedPostPlantSite(null)
+                          setSelectedPostPlantPositions(null)
+                        }}
+                      >
+                        {mapData.mapName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Grid of subsections */}
+                <div className={styles.valPerMapGrid}>
+                  {/* Agent Picks for this Map */}
+                  {agentPicksMapData && (
+                    <div className={`${styles.valPerMapSubsection} ${styles.valPerMapSubsectionFull}`}>
+                      <div className={styles.valPerMapSubsectionHeader}>
+                        Agent Picks <span className={styles.valPerMapSampleSize}>({agentPicksMapData.gamesPlayed} games)</span>
+                      </div>
+                      <div className={styles.valAgentGrid}>
+                        {agentPicksMapData.agentPicks.slice(0, 10).map((agent) => (
+                          <div key={agent.agentId} className={styles.valAgentCard}>
+                            <Image
+                              src={getAgentImagePath(agent.agentName)}
+                              alt={agent.agentName}
+                              width={36}
+                              height={36}
+                              className={styles.valAgentImage}
+                              unoptimized
+                            />
+                            <div className={styles.valAgentInfo}>
+                              <span className={styles.valAgentName}>{agent.agentName}</span>
+                              <span className={styles.valAgentStats}>
+                                {Math.round(agent.percentage)}% pick · {Math.round(agent.winPercentage)}% win
+                              </span>
+                            </div>
+                            <div className={styles.valAgentBarContainer}>
+                              <div 
+                                className={styles.valAgentBar}
+                                style={{ width: `${agent.percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                
+                {/* Defensive Setups for this Map */}
+                {defensiveMapData && (
+                  <div className={styles.valPerMapSubsection}>
+                    <div className={styles.valPerMapSubsectionHeader}>
+                      Defensive Setups <span className={styles.valPerMapSampleSize}>({defensiveMapData.totalRounds} rounds)</span>
                     </div>
                     <div className={styles.valDefenseFormations}>
-                      {mapData.formations.slice(0, 4).map((formation, idx) => (
+                      {defensiveMapData.formations.slice(0, 5).map((formation, idx) => (
                         <div key={idx} className={styles.valDefenseFormationRow}>
                           <div className={styles.valDefenseFormationChips}>
                             {Object.entries(formation.superRegions)
@@ -2053,27 +2141,16 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                       ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {/* Offensive Setups Section */}
-          {valScoutingReport.offensiveSetups && valScoutingReport.offensiveSetups.byMap.length > 0 && (
-            <div className={styles.scoutingSection}>
-              <h4 className={styles.sectionTitle}>
-                Offensive Executes ({valScoutingReport.offensiveSetups.totalOffensiveRounds} rounds)
-                <span className={styles.sectionSubtitle}>Player positions at first kill</span>
-              </h4>
-              
-              <div className={styles.valDefenseMapsGrid}>
-                {valScoutingReport.offensiveSetups.byMap.map((mapData) => (
-                  <div key={mapData.mapId} className={styles.valDefenseMapSection}>
-                    <div className={styles.valDefenseMapHeader}>
-                      {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
+                )}
+                
+                {/* Offensive Executes for this Map */}
+                {offensiveMapData && (
+                  <div className={styles.valPerMapSubsection}>
+                    <div className={styles.valPerMapSubsectionHeader}>
+                      Offensive Executes <span className={styles.valPerMapSampleSize}>({offensiveMapData.totalRounds} rounds)</span>
                     </div>
                     <div className={styles.valDefenseFormations}>
-                      {mapData.formations.slice(0, 4).map((formation, idx) => (
+                      {offensiveMapData.formations.slice(0, 5).map((formation, idx) => (
                         <div key={idx} className={styles.valDefenseFormationRow}>
                           <div className={styles.valDefenseFormationChips}>
                             {Object.entries(formation.superRegions)
@@ -2098,354 +2175,358 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                       ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {/* Economy-Based Setups */}
-          {valScoutingReport.economySetups && (
-            <>
-              {/* Defensive Buy Rounds */}
-              {valScoutingReport.economySetups.defensive.buy.byMap.length > 0 && (
-                <div className={styles.scoutingSection}>
-                  <h4 className={styles.sectionTitle}>
-                    Defensive - Buy Rounds ({valScoutingReport.economySetups.defensive.buy.totalRounds} rounds)
-                    <span className={styles.sectionSubtitle}>Won previous round or bought rifle/op</span>
-                  </h4>
-                  
-                  <div className={styles.valDefenseMapsGrid}>
-                    {valScoutingReport.economySetups.defensive.buy.byMap.map((mapData) => (
-                      <div key={mapData.mapId} className={styles.valDefenseMapSection}>
-                        <div className={styles.valDefenseMapHeader}>
-                          {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
-                        </div>
-                        <div className={styles.valDefenseFormations}>
-                          {mapData.formations.slice(0, 4).map((formation, idx) => (
-                            <div key={idx} className={styles.valDefenseFormationRow}>
-                              <div className={styles.valDefenseFormationChips}>
-                                {Object.entries(formation.superRegions)
-                                  .sort((a, b) => a[0].localeCompare(b[0]))
-                                  .map(([region, count]) => (
-                                    <span 
-                                      key={region} 
-                                      className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                    >
-                                      {count}{shortenRegionName(region)}
-                                    </span>
-                                  ))}
-                              </div>
-                              <div className={styles.valDefenseFormationBar}>
-                                <div 
-                                  className={styles.valBuyFormationBarFill} 
-                                  style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                                />
-                              </div>
-                              <span className={styles.valBuyFormationPercent}>{Math.round(formation.percentage)}%</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* Defensive Eco Rounds */}
-              {valScoutingReport.economySetups.defensive.eco.byMap.length > 0 && (
-                <div className={styles.scoutingSection}>
-                  <h4 className={styles.sectionTitle}>
-                    Defensive - Eco Rounds ({valScoutingReport.economySetups.defensive.eco.totalRounds} rounds)
-                    <span className={styles.sectionSubtitle}>Lost previous round, no rifle/op</span>
-                  </h4>
-                  
-                  <div className={styles.valDefenseMapsGrid}>
-                    {valScoutingReport.economySetups.defensive.eco.byMap.map((mapData) => (
-                      <div key={mapData.mapId} className={styles.valDefenseMapSection}>
-                        <div className={styles.valDefenseMapHeader}>
-                          {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
-                        </div>
-                        <div className={styles.valDefenseFormations}>
-                          {mapData.formations.slice(0, 4).map((formation, idx) => (
-                            <div key={idx} className={styles.valDefenseFormationRow}>
-                              <div className={styles.valDefenseFormationChips}>
-                                {Object.entries(formation.superRegions)
-                                  .sort((a, b) => a[0].localeCompare(b[0]))
-                                  .map(([region, count]) => (
-                                    <span 
-                                      key={region} 
-                                      className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                    >
-                                      {count}{shortenRegionName(region)}
-                                    </span>
-                                  ))}
-                              </div>
-                              <div className={styles.valDefenseFormationBar}>
-                                <div 
-                                  className={styles.valEcoFormationBarFill} 
-                                  style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                                />
-                              </div>
-                              <span className={styles.valEcoFormationPercent}>{Math.round(formation.percentage)}%</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* Offensive Buy Rounds */}
-              {valScoutingReport.economySetups.offensive.buy.byMap.length > 0 && (
-                <div className={styles.scoutingSection}>
-                  <h4 className={styles.sectionTitle}>
-                    Offensive - Buy Rounds ({valScoutingReport.economySetups.offensive.buy.totalRounds} rounds)
-                    <span className={styles.sectionSubtitle}>Won previous round or bought rifle/op</span>
-                  </h4>
-                  
-                  <div className={styles.valDefenseMapsGrid}>
-                    {valScoutingReport.economySetups.offensive.buy.byMap.map((mapData) => (
-                      <div key={mapData.mapId} className={styles.valDefenseMapSection}>
-                        <div className={styles.valDefenseMapHeader}>
-                          {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
-                        </div>
-                        <div className={styles.valDefenseFormations}>
-                          {mapData.formations.slice(0, 4).map((formation, idx) => (
-                            <div key={idx} className={styles.valDefenseFormationRow}>
-                              <div className={styles.valDefenseFormationChips}>
-                                {Object.entries(formation.superRegions)
-                                  .sort((a, b) => a[0].localeCompare(b[0]))
-                                  .map(([region, count]) => (
-                                    <span 
-                                      key={region} 
-                                      className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                    >
-                                      {count}{shortenRegionName(region)}
-                                    </span>
-                                  ))}
-                              </div>
-                              <div className={styles.valDefenseFormationBar}>
-                                <div 
-                                  className={styles.valBuyFormationBarFill} 
-                                  style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                                />
-                              </div>
-                              <span className={styles.valBuyFormationPercent}>{Math.round(formation.percentage)}%</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* Offensive Eco Rounds */}
-              {valScoutingReport.economySetups.offensive.eco.byMap.length > 0 && (
-                <div className={styles.scoutingSection}>
-                  <h4 className={styles.sectionTitle}>
-                    Offensive - Eco Rounds ({valScoutingReport.economySetups.offensive.eco.totalRounds} rounds)
-                    <span className={styles.sectionSubtitle}>Lost previous round, no rifle/op</span>
-                  </h4>
-                  
-                  <div className={styles.valDefenseMapsGrid}>
-                    {valScoutingReport.economySetups.offensive.eco.byMap.map((mapData) => (
-                      <div key={mapData.mapId} className={styles.valDefenseMapSection}>
-                        <div className={styles.valDefenseMapHeader}>
-                          {mapData.mapName} <span className={styles.valDefenseRoundCount}>({mapData.totalRounds})</span>
-                        </div>
-                        <div className={styles.valDefenseFormations}>
-                          {mapData.formations.slice(0, 4).map((formation, idx) => (
-                            <div key={idx} className={styles.valDefenseFormationRow}>
-                              <div className={styles.valDefenseFormationChips}>
-                                {Object.entries(formation.superRegions)
-                                  .sort((a, b) => a[0].localeCompare(b[0]))
-                                  .map(([region, count]) => (
-                                    <span 
-                                      key={region} 
-                                      className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                    >
-                                      {count}{shortenRegionName(region)}
-                                    </span>
-                                  ))}
-                              </div>
-                              <div className={styles.valDefenseFormationBar}>
-                                <div 
-                                  className={styles.valEcoFormationBarFill} 
-                                  style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                                />
-                              </div>
-                              <span className={styles.valEcoFormationPercent}>{Math.round(formation.percentage)}%</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          
-          {/* Player Positions Section */}
-          {valScoutingReport.playerPositions && valScoutingReport.playerPositions.byMap.length > 0 && (() => {
-            // Set default map if not selected
-            const availableMaps = valScoutingReport.playerPositions.byMap
-            const currentMapId = selectedPlayerPosMap || availableMaps[0]?.mapId
-            const currentMapData = availableMaps.find(m => m.mapId === currentMapId)
-            
-            if (!currentMapData) return null
-            
-            // Collect all clusters with >20% for all players on this map, sorted by percentage
-            const allClusters = currentMapData.players.flatMap(player =>
-              player.clusters
-                .filter(cluster => cluster.percentage >= 20)
-                .map((cluster, idx) => ({
-                  id: `${player.playerId}-${idx}`,
-                  playerName: player.playerName,
-                  callout: cluster.callout,
-                  percentage: cluster.percentage,
-                  positions: cluster.positions || [],
-                  count: cluster.count,
-                }))
-            ).sort((a, b) => b.percentage - a.percentage)
-            
-            // Expand selected clusters into individual position dots
-            const staticPositions = allClusters
-              .filter(cluster => selectedPlayerPositions.has(cluster.id))
-              .flatMap(cluster => 
-                cluster.positions.map((pos, posIdx) => ({
-                  id: `${cluster.id}-pos-${posIdx}`,
-                  label: cluster.playerName,
-                  x: pos.x,
-                  y: pos.y,
-                  percentage: cluster.percentage,
-                  tooltip: `${cluster.playerName}: ${cluster.callout} (${Math.round(cluster.percentage)}%)`,
-                }))
-              )
-            
-            return (
-              <div className={styles.scoutingSection}>
-                <h4 className={styles.sectionTitle}>
-                  Common Locations
-                  <span className={styles.sectionSubtitle}>Positions held &gt;20% of rounds</span>
-                </h4>
+                )}
                 
-                <div className={styles.valPlayerPosVisualContainer}>
-                  {/* Map Selector */}
-                  <div className={styles.valPlayerPosMapSelector}>
-                    {availableMaps.map((mapData) => (
-                      <button
-                        key={mapData.mapId}
-                        className={`${styles.valPlayerPosMapBtn} ${mapData.mapId === currentMapId ? styles.valPlayerPosMapBtnActive : ''}`}
-                        onClick={() => {
-                          setSelectedPlayerPosMap(mapData.mapId)
-                          setSelectedPlayerPositions(new Set()) // Clear selections on map change
-                        }}
-                      >
-                        {mapData.mapName}
-                      </button>
-                    ))}
-                  </div>
-                  
-                  {/* Map with positions using ValorantMapPlayer static mode */}
-                  <div className={styles.valPlayerPosMapWrapper}>
-                    <ValorantMapPlayer
-                      mode="static"
-                      mapName={currentMapId}
-                      staticPositions={staticPositions}
-                      mapSize={400}
-                      dotSize="small"
-                    />
-                    
-                    {/* Position Filters */}
-                    <div className={styles.valPlayerPosFilters}>
-                      <div className={styles.valPlayerPosFiltersHeader}>
-                        <span>Select positions to display</span>
-                        <button
-                          className={styles.valPlayerPosSelectAll}
-                          onClick={() => {
-                            if (selectedPlayerPositions.size === allClusters.length) {
-                              setSelectedPlayerPositions(new Set())
-                            } else {
-                              setSelectedPlayerPositions(new Set(allClusters.map(c => c.id)))
-                            }
-                          }}
-                        >
-                          {selectedPlayerPositions.size === allClusters.length ? 'Clear All' : 'Select All'}
-                        </button>
-                      </div>
-                      <div className={styles.valPlayerPosFilterList}>
-                        {allClusters.map((cluster) => (
-                          <label
-                            key={cluster.id}
-                            className={`${styles.valPlayerPosFilterItem} ${selectedPlayerPositions.has(cluster.id) ? styles.valPlayerPosFilterItemActive : ''}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedPlayerPositions.has(cluster.id)}
-                              onChange={(e) => {
-                                const newSet = new Set(selectedPlayerPositions)
-                                if (e.target.checked) {
-                                  newSet.add(cluster.id)
-                                } else {
-                                  newSet.delete(cluster.id)
-                                }
-                                setSelectedPlayerPositions(newSet)
-                              }}
-                              className={styles.valPlayerPosCheckbox}
+                {/* Economy: Defensive Buy Rounds */}
+                {economyDefBuyMapData && (
+                  <div className={styles.valPerMapSubsection}>
+                    <div className={styles.valPerMapSubsectionHeader}>
+                      Defensive - Buy Rounds <span className={styles.valPerMapSampleSize}>({economyDefBuyMapData.totalRounds} rounds)</span>
+                    </div>
+                    <div className={styles.valDefenseFormations}>
+                      {economyDefBuyMapData.formations.slice(0, 4).map((formation, idx) => (
+                        <div key={idx} className={styles.valDefenseFormationRow}>
+                          <div className={styles.valDefenseFormationChips}>
+                            {Object.entries(formation.superRegions)
+                              .sort((a, b) => a[0].localeCompare(b[0]))
+                              .map(([region, count]) => (
+                                <span 
+                                  key={region} 
+                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                >
+                                  {count}{shortenRegionName(region)}
+                                </span>
+                              ))}
+                          </div>
+                          <div className={styles.valDefenseFormationBar}>
+                            <div 
+                              className={styles.valBuyFormationBarFill} 
+                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
                             />
-                            <span className={styles.valPlayerPosFilterLabel}>
-                              {cluster.playerName} - {cluster.callout}
-                            </span>
-                            <span className={styles.valPlayerPosFilterPercent}>
-                              {cluster.count} ({Math.round(cluster.percentage)}%)
-                            </span>
-                          </label>
-                        ))}
-                      </div>
+                          </div>
+                          <span className={styles.valBuyFormationPercent}>{Math.round(formation.percentage)}%</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              </div>
-            )
-          })()}
-          
-          {/* Lurker Analysis Section */}
-          {valScoutingReport.lurkerStats && valScoutingReport.lurkerStats.byMap.length > 0 && (() => {
-            // Filter to only show players with >= 10% lurk rate and exclude "Attacker Side" pushes
-            const filteredMaps = valScoutingReport.lurkerStats.byMap
-              .map(mapData => ({
-                ...mapData,
-                players: mapData.players
-                  .filter(p => p.lurkPercentage >= 10)
-                  .map(player => ({
-                    ...player,
-                    byPushSite: player.byPushSite.filter(ps => ps.pushSite !== 'Attacker Side'),
-                  })),
-              }))
-              .filter(m => m.players.length > 0)
-            
-            if (filteredMaps.length === 0) return null
-            
-            return (
-              <div className={styles.scoutingSection}>
-                <h4 className={styles.sectionTitle}>
-                  Lurker Tendencies
-                  <span className={styles.sectionSubtitle}>Players who split from the pack on attack</span>
-                </h4>
+                )}
                 
-                <div className={styles.valLurkerContainer}>
-                  {filteredMaps.map((mapData) => (
-                    <div key={mapData.mapId} className={styles.valLurkerMapSection}>
-                      <div className={styles.valLurkerMapHeader}>
-                        {mapData.mapName}
-                        <span className={styles.valLurkerRoundCount}>({mapData.totalAttackRounds} attack rounds)</span>
+                {/* Economy: Defensive Eco Rounds */}
+                {economyDefEcoMapData && (
+                  <div className={styles.valPerMapSubsection}>
+                    <div className={styles.valPerMapSubsectionHeader}>
+                      Defensive - Eco Rounds <span className={styles.valPerMapSampleSize}>({economyDefEcoMapData.totalRounds} rounds)</span>
+                    </div>
+                    <div className={styles.valDefenseFormations}>
+                      {economyDefEcoMapData.formations.slice(0, 4).map((formation, idx) => (
+                        <div key={idx} className={styles.valDefenseFormationRow}>
+                          <div className={styles.valDefenseFormationChips}>
+                            {Object.entries(formation.superRegions)
+                              .sort((a, b) => a[0].localeCompare(b[0]))
+                              .map(([region, count]) => (
+                                <span 
+                                  key={region} 
+                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                >
+                                  {count}{shortenRegionName(region)}
+                                </span>
+                              ))}
+                          </div>
+                          <div className={styles.valDefenseFormationBar}>
+                            <div 
+                              className={styles.valEcoFormationBarFill} 
+                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                            />
+                          </div>
+                          <span className={styles.valEcoFormationPercent}>{Math.round(formation.percentage)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Economy: Offensive Buy Rounds */}
+                {economyOffBuyMapData && (
+                  <div className={styles.valPerMapSubsection}>
+                    <div className={styles.valPerMapSubsectionHeader}>
+                      Offensive - Buy Rounds <span className={styles.valPerMapSampleSize}>({economyOffBuyMapData.totalRounds} rounds)</span>
+                    </div>
+                    <div className={styles.valDefenseFormations}>
+                      {economyOffBuyMapData.formations.slice(0, 4).map((formation, idx) => (
+                        <div key={idx} className={styles.valDefenseFormationRow}>
+                          <div className={styles.valDefenseFormationChips}>
+                            {Object.entries(formation.superRegions)
+                              .sort((a, b) => a[0].localeCompare(b[0]))
+                              .map(([region, count]) => (
+                                <span 
+                                  key={region} 
+                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                >
+                                  {count}{shortenRegionName(region)}
+                                </span>
+                              ))}
+                          </div>
+                          <div className={styles.valDefenseFormationBar}>
+                            <div 
+                              className={styles.valBuyFormationBarFill} 
+                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                            />
+                          </div>
+                          <span className={styles.valBuyFormationPercent}>{Math.round(formation.percentage)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Economy: Offensive Eco Rounds */}
+                {economyOffEcoMapData && (
+                  <div className={styles.valPerMapSubsection}>
+                    <div className={styles.valPerMapSubsectionHeader}>
+                      Offensive - Eco Rounds <span className={styles.valPerMapSampleSize}>({economyOffEcoMapData.totalRounds} rounds)</span>
+                    </div>
+                    <div className={styles.valDefenseFormations}>
+                      {economyOffEcoMapData.formations.slice(0, 4).map((formation, idx) => (
+                        <div key={idx} className={styles.valDefenseFormationRow}>
+                          <div className={styles.valDefenseFormationChips}>
+                            {Object.entries(formation.superRegions)
+                              .sort((a, b) => a[0].localeCompare(b[0]))
+                              .map(([region, count]) => (
+                                <span 
+                                  key={region} 
+                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
+                                >
+                                  {count}{shortenRegionName(region)}
+                                </span>
+                              ))}
+                          </div>
+                          <div className={styles.valDefenseFormationBar}>
+                            <div 
+                              className={styles.valEcoFormationBarFill} 
+                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
+                            />
+                          </div>
+                          <span className={styles.valEcoFormationPercent}>{Math.round(formation.percentage)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Unified Map Analysis Section */}
+                {(playerPositionsMapData || defAbilityMapData || offAbilityMapData || postPlantMapData) && (() => {
+                  // Determine available tabs
+                  const tabs: { id: 'positions' | 'defAbility' | 'offAbility' | 'postPlant'; label: string; available: boolean }[] = [
+                    { id: 'positions', label: 'Common Defender Locations', available: !!playerPositionsMapData },
+                    { id: 'defAbility', label: 'Defender Abilities', available: !!defAbilityMapData },
+                    { id: 'offAbility', label: 'Attacker Abilities', available: !!offAbilityMapData },
+                    { id: 'postPlant', label: 'Post-Plant', available: !!postPlantMapData },
+                  ].filter(t => t.available)
+                  
+                  if (tabs.length === 0) return null
+                  
+                  // Default to first available tab if current isn't available
+                  const activeTab = tabs.find(t => t.id === selectedMapAnalysisTab)?.id || tabs[0].id
+                  
+                  // Build clusters and positions based on active tab
+                  let allClusters: { id: string; playerName: string; callout: string; percentage: number; positions: { x: number; y: number }[]; count: number; extra?: string }[] = []
+                  let effectiveSelection: Set<string> = new Set()
+                  let setSelection: (s: Set<string>) => void = () => {}
+                  let selectedSet: Set<string> = new Set()
+                  let subtitle = ''
+                  
+                  // Filter out placeholder players like "Player 1", "Player 2", etc.
+                  const isRealPlayer = (name: string) => !/^Player \d+$/i.test(name)
+                  
+                  if (activeTab === 'positions' && playerPositionsMapData) {
+                    allClusters = playerPositionsMapData.players
+                      .filter(player => isRealPlayer(player.playerName))
+                      .flatMap(player =>
+                        player.clusters.filter(c => c.percentage >= 20).map((c, idx) => ({
+                          id: `${player.playerId}-${idx}`,
+                          playerName: player.playerName,
+                          callout: c.callout,
+                          percentage: c.percentage,
+                          positions: c.positions || [],
+                          count: c.count,
+                        }))
+                      ).sort((a, b) => b.percentage - a.percentage)
+                    selectedSet = selectedPlayerPositions
+                    setSelection = setSelectedPlayerPositions
+                    subtitle = 'Positions held >20% of rounds'
+                  } else if (activeTab === 'defAbility' && defAbilityMapData) {
+                    allClusters = defAbilityMapData.players
+                      .filter(player => isRealPlayer(player.playerName))
+                      .flatMap(player =>
+                        player.clusters.filter(c => c.percentage >= 15).map((c, idx) => ({
+                          id: `def-${player.playerId}-${c.abilityId}-${c.agentName}-${idx}`,
+                          playerName: player.playerName,
+                          callout: c.callout,
+                          percentage: c.percentage,
+                          positions: c.positions || [],
+                          count: c.count,
+                          extra: c.abilityId,
+                        }))
+                      ).sort((a, b) => b.percentage - a.percentage)
+                    selectedSet = selectedDefAbilities
+                    setSelection = setSelectedDefAbilities
+                    subtitle = 'Up to 25s after defender round start'
+                  } else if (activeTab === 'offAbility' && offAbilityMapData) {
+                    allClusters = offAbilityMapData.players
+                      .filter(player => isRealPlayer(player.playerName))
+                      .flatMap(player =>
+                        player.clusters.filter(c => c.percentage >= 15).map((c, idx) => ({
+                          id: `off-${player.playerId}-${c.abilityId}-${c.agentName}-${idx}`,
+                          playerName: player.playerName,
+                          callout: c.callout,
+                          percentage: c.percentage,
+                          positions: c.positions || [],
+                          count: c.count,
+                          extra: c.abilityId,
+                        }))
+                      ).sort((a, b) => b.percentage - a.percentage)
+                    selectedSet = selectedOffAbilities
+                    setSelection = setSelectedOffAbilities
+                    subtitle = 'Up to 25s after attacker round start'
+                  } else if (activeTab === 'postPlant' && postPlantMapData) {
+                    const sites = postPlantMapData.bySite
+                    const site = selectedPostPlantSite || sites[0]?.site
+                    const siteData = sites.find(s => s.site === site)
+                    if (siteData) {
+                      allClusters = siteData.players
+                        .filter(player => isRealPlayer(player.playerName))
+                        .flatMap(player =>
+                          player.clusters.filter(c => c.percentage >= 15).map((c, idx) => ({
+                            id: `postplant-${site}-${player.playerId}-${c.callout}-${idx}`,
+                            playerName: player.playerName,
+                            callout: c.callout,
+                            percentage: c.percentage,
+                            positions: c.positions || [],
+                            count: c.count,
+                          }))
+                        ).sort((a, b) => b.percentage - a.percentage)
+                    }
+                    selectedSet = selectedPostPlantPositions
+                    setSelection = setSelectedPostPlantPositions
+                    subtitle = `10s after ${selectedPostPlantSite || postPlantMapData.bySite[0]?.site || ''} plant`
+                  }
+                  
+                  // null = first load, default to first item; empty Set = user cleared all, show nothing
+                  effectiveSelection = selectedSet === null 
+                    ? (allClusters.length > 0 ? new Set([allClusters[0].id]) : new Set())
+                    : selectedSet
+                  
+                  const staticPositions = allClusters
+                    .filter(c => effectiveSelection.has(c.id))
+                    .flatMap(c => c.positions.map((pos, idx) => ({
+                      id: `${c.id}-pos-${idx}`,
+                      label: c.playerName,
+                      x: pos.x,
+                      y: pos.y,
+                      percentage: c.percentage,
+                      tooltip: `${c.playerName}: ${c.callout} (${Math.round(c.percentage)}%)`,
+                    })))
+                  
+                  return (
+                    <div className={`${styles.valPerMapSubsection} ${styles.valPerMapSubsectionFull}`}>
+                      <div className={styles.valMapAnalysisHeader}>
+                        <div className={styles.valMapAnalysisTabs}>
+                          {tabs.map(tab => (
+                            <button
+                              key={tab.id}
+                              className={`${styles.valMapAnalysisTab} ${activeTab === tab.id ? styles.valMapAnalysisTabActive : ''}`}
+                              onClick={() => setSelectedMapAnalysisTab(tab.id)}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
+                        {activeTab === 'postPlant' && postPlantMapData && (
+                          <div className={styles.valPerMapSiteSelector}>
+                            {postPlantMapData.bySite.map(s => (
+                              <button
+                                key={s.site}
+                                className={`${styles.valPerMapSiteBtn} ${(selectedPostPlantSite || postPlantMapData.bySite[0]?.site) === s.site ? styles.valPerMapSiteBtnActive : ''}`}
+                                onClick={() => { setSelectedPostPlantSite(s.site); setSelectedPostPlantPositions(null) }}
+                              >
+                                {s.site} ({s.totalPlants})
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      
+                      <div className={styles.valMapAnalysisSubtitle}>{subtitle}</div>
+                      <div className={styles.valPlayerPosMapWrapper}>
+                        <ValorantMapPlayer
+                          mode="static"
+                          mapName={currentMapId}
+                          staticPositions={staticPositions}
+                          mapSize={350}
+                          dotSize="small"
+                        />
+                        <div className={styles.valPlayerPosFilters}>
+                          <div className={styles.valPlayerPosFiltersHeader}>
+                            <span>Select to display</span>
+                            <button
+                              className={styles.valPlayerPosSelectAll}
+                              onClick={() => {
+                                if (effectiveSelection.size === allClusters.length) {
+                                  setSelection(new Set()) // Clear all
+                                } else {
+                                  setSelection(new Set(allClusters.map(c => c.id)))
+                                }
+                              }}
+                            >
+                              {effectiveSelection.size === allClusters.length ? 'Clear' : 'All'}
+                            </button>
+                          </div>
+                          <div className={styles.valPlayerPosFilterList}>
+                            {allClusters.map(c => (
+                              <label key={c.id} className={`${styles.valPlayerPosFilterItem} ${effectiveSelection.has(c.id) ? styles.valPlayerPosFilterItemActive : ''}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={effectiveSelection.has(c.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(effectiveSelection)
+                                    if (e.target.checked) newSet.add(c.id)
+                                    else newSet.delete(c.id)
+                                    setSelection(newSet)
+                                  }}
+                                  className={styles.valPlayerPosCheckbox}
+                                />
+                                <span className={styles.valPlayerPosFilterLabel}>
+                                  {c.playerName}{c.extra ? `: ${c.extra}` : ''} @ {c.callout}
+                                </span>
+                                <span className={styles.valPlayerPosFilterPercent}>
+                                  {c.count} ({Math.round(c.percentage)}%)
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+                
+                {/* Lurker Tendencies */}
+                {lurkerMapData && (() => {
+                  const filteredPlayers = lurkerMapData.players
+                    .filter(p => p.lurkPercentage >= 10)
+                    .map(player => ({
+                      ...player,
+                      byPushSite: player.byPushSite.filter(ps => ps.pushSite !== 'Attacker Side'),
+                    }))
+                  
+                  if (filteredPlayers.length === 0) return null
+                  
+                  return (
+                    <div className={styles.valPerMapSubsection}>
+                      <div className={styles.valPerMapSubsectionHeader}>
+                        Lurker Tendencies <span className={styles.valPerMapSampleSize}>({lurkerMapData.totalAttackRounds} attack rounds)</span>
+                      </div>
                       <div className={styles.valLurkerPlayers}>
-                        {mapData.players.map((player) => (
+                        {filteredPlayers.map((player) => (
                           <div key={player.playerId} className={styles.valLurkerPlayerRow}>
                             <div className={styles.valLurkerPlayerHeader}>
                               <span className={styles.valLurkerPlayerName}>{player.playerName}</span>
@@ -2476,247 +2557,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                         ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-          
-          {/* Defensive Ability Usage Section */}
-          {valScoutingReport.abilityUsage && valScoutingReport.abilityUsage.defensive.length > 0 && (() => {
-            const availableMaps = valScoutingReport.abilityUsage.defensive
-            const currentMapId = selectedDefAbilityMap || availableMaps[0]?.mapId
-            const currentMapData = availableMaps.find(m => m.mapId === currentMapId)
-            
-            if (!currentMapData) return null
-            
-            const allClusters = currentMapData.players.flatMap(player =>
-              player.clusters
-                .filter(cluster => cluster.percentage >= 15)
-                .map((cluster, idx) => ({
-                  id: `def-${player.playerId}-${cluster.abilityId}-${cluster.agentName}-${idx}`,
-                  playerName: player.playerName,
-                  callout: cluster.callout,
-                  abilityId: cluster.abilityId,
-                  agentName: cluster.agentName,
-                  percentage: cluster.percentage,
-                  positions: cluster.positions || [],
-                  count: cluster.count,
-                }))
-            ).sort((a, b) => b.percentage - a.percentage)
-            
-            const staticPositions = allClusters
-              .filter(cluster => selectedDefAbilities.has(cluster.id))
-              .flatMap(cluster => 
-                cluster.positions.map((pos, posIdx) => ({
-                  id: `${cluster.id}-pos-${posIdx}`,
-                  label: cluster.playerName,
-                  x: pos.x,
-                  y: pos.y,
-                  percentage: cluster.percentage,
-                  tooltip: `${cluster.playerName} on ${cluster.agentName}: ${cluster.abilityId} at ${cluster.callout} (${Math.round(cluster.percentage)}%)`,
-                }))
-              )
-            
-            return (
-              <div className={styles.scoutingSection}>
-                <h4 className={styles.sectionTitle}>
-                  Defensive Ability Setups
-                  <span className={styles.sectionSubtitle}>Ability usage up to 25s after round start (defense)</span>
-                </h4>
-                
-                <div className={styles.valPlayerPosVisualContainer}>
-                  <div className={styles.valPlayerPosMapSelector}>
-                    {availableMaps.map((mapData) => (
-                      <button
-                        key={mapData.mapId}
-                        className={`${styles.valPlayerPosMapBtn} ${mapData.mapId === currentMapId ? styles.valPlayerPosMapBtnActive : ''}`}
-                        onClick={() => {
-                          setSelectedDefAbilityMap(mapData.mapId)
-                          setSelectedDefAbilities(new Set())
-                        }}
-                      >
-                        {mapData.mapName}
-                      </button>
-                    ))}
-                  </div>
-                  
-                  <div className={styles.valPlayerPosMapWrapper}>
-                    <ValorantMapPlayer
-                      mode="static"
-                      mapName={currentMapId}
-                      staticPositions={staticPositions}
-                      mapSize={400}
-                      dotSize="small"
-                    />
-                    
-                    <div className={styles.valPlayerPosFilters}>
-                      <div className={styles.valPlayerPosFiltersHeader}>
-                        <span>Select abilities to display</span>
-                        <button
-                          className={styles.valPlayerPosSelectAll}
-                          onClick={() => {
-                            if (selectedDefAbilities.size === allClusters.length) {
-                              setSelectedDefAbilities(new Set())
-                            } else {
-                              setSelectedDefAbilities(new Set(allClusters.map(c => c.id)))
-                            }
-                          }}
-                        >
-                          {selectedDefAbilities.size === allClusters.length ? 'Clear All' : 'Select All'}
-                        </button>
-                      </div>
-                      <div className={styles.valPlayerPosFilterList}>
-                        {allClusters.map((cluster) => (
-                          <label
-                            key={cluster.id}
-                            className={`${styles.valPlayerPosFilterItem} ${selectedDefAbilities.has(cluster.id) ? styles.valPlayerPosFilterItemActive : ''}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedDefAbilities.has(cluster.id)}
-                              onChange={(e) => {
-                                const newSet = new Set(selectedDefAbilities)
-                                if (e.target.checked) {
-                                  newSet.add(cluster.id)
-                                } else {
-                                  newSet.delete(cluster.id)
-                                }
-                                setSelectedDefAbilities(newSet)
-                              }}
-                              className={styles.valPlayerPosCheckbox}
-                            />
-                            <span className={styles.valPlayerPosFilterLabel}>
-                              {cluster.playerName} on {cluster.agentName}: {cluster.abilityId} @ {cluster.callout}
-                            </span>
-                            <span className={styles.valPlayerPosFilterPercent}>
-                              {cluster.count} ({Math.round(cluster.percentage)}%)
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
-          
-          {/* Offensive Ability Usage Section */}
-          {valScoutingReport.abilityUsage && valScoutingReport.abilityUsage.offensive.length > 0 && (() => {
-            const availableMaps = valScoutingReport.abilityUsage.offensive
-            const currentMapId = selectedOffAbilityMap || availableMaps[0]?.mapId
-            const currentMapData = availableMaps.find(m => m.mapId === currentMapId)
-            
-            if (!currentMapData) return null
-            
-            const allClusters = currentMapData.players.flatMap(player =>
-              player.clusters
-                .filter(cluster => cluster.percentage >= 15)
-                .map((cluster, idx) => ({
-                  id: `off-${player.playerId}-${cluster.abilityId}-${cluster.agentName}-${idx}`,
-                  playerName: player.playerName,
-                  callout: cluster.callout,
-                  abilityId: cluster.abilityId,
-                  agentName: cluster.agentName,
-                  percentage: cluster.percentage,
-                  positions: cluster.positions || [],
-                  count: cluster.count,
-                }))
-            ).sort((a, b) => b.percentage - a.percentage)
-            
-            const staticPositions = allClusters
-              .filter(cluster => selectedOffAbilities.has(cluster.id))
-              .flatMap(cluster => 
-                cluster.positions.map((pos, posIdx) => ({
-                  id: `${cluster.id}-pos-${posIdx}`,
-                  label: cluster.playerName,
-                  x: pos.x,
-                  y: pos.y,
-                  percentage: cluster.percentage,
-                  tooltip: `${cluster.playerName} on ${cluster.agentName}: ${cluster.abilityId} at ${cluster.callout} (${Math.round(cluster.percentage)}%)`,
-                }))
-              )
-            
-            return (
-              <div className={styles.scoutingSection}>
-                <h4 className={styles.sectionTitle}>
-                  Offensive Ability Usage
-                  <span className={styles.sectionSubtitle}>Ability usage up to 25s after round start (offense)</span>
-                </h4>
-                
-                <div className={styles.valPlayerPosVisualContainer}>
-                  <div className={styles.valPlayerPosMapSelector}>
-                    {availableMaps.map((mapData) => (
-                      <button
-                        key={mapData.mapId}
-                        className={`${styles.valPlayerPosMapBtn} ${mapData.mapId === currentMapId ? styles.valPlayerPosMapBtnActive : ''}`}
-                        onClick={() => {
-                          setSelectedOffAbilityMap(mapData.mapId)
-                          setSelectedOffAbilities(new Set())
-                        }}
-                      >
-                        {mapData.mapName}
-                      </button>
-                    ))}
-                  </div>
-                  
-                  <div className={styles.valPlayerPosMapWrapper}>
-                    <ValorantMapPlayer
-                      mode="static"
-                      mapName={currentMapId}
-                      staticPositions={staticPositions}
-                      mapSize={400}
-                      dotSize="small"
-                    />
-                    
-                    <div className={styles.valPlayerPosFilters}>
-                      <div className={styles.valPlayerPosFiltersHeader}>
-                        <span>Select abilities to display</span>
-                        <button
-                          className={styles.valPlayerPosSelectAll}
-                          onClick={() => {
-                            if (selectedOffAbilities.size === allClusters.length) {
-                              setSelectedOffAbilities(new Set())
-                            } else {
-                              setSelectedOffAbilities(new Set(allClusters.map(c => c.id)))
-                            }
-                          }}
-                        >
-                          {selectedOffAbilities.size === allClusters.length ? 'Clear All' : 'Select All'}
-                        </button>
-                      </div>
-                      <div className={styles.valPlayerPosFilterList}>
-                        {allClusters.map((cluster) => (
-                          <label
-                            key={cluster.id}
-                            className={`${styles.valPlayerPosFilterItem} ${selectedOffAbilities.has(cluster.id) ? styles.valPlayerPosFilterItemActive : ''}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedOffAbilities.has(cluster.id)}
-                              onChange={(e) => {
-                                const newSet = new Set(selectedOffAbilities)
-                                if (e.target.checked) {
-                                  newSet.add(cluster.id)
-                                } else {
-                                  newSet.delete(cluster.id)
-                                }
-                                setSelectedOffAbilities(newSet)
-                              }}
-                              className={styles.valPlayerPosCheckbox}
-                            />
-                            <span className={styles.valPlayerPosFilterLabel}>
-                              {cluster.playerName} on {cluster.agentName}: {cluster.abilityId} @ {cluster.callout}
-                            </span>
-                            <span className={styles.valPlayerPosFilterPercent}>
-                              {cluster.count} ({Math.round(cluster.percentage)}%)
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                  )
+                })()}
                 </div>
               </div>
             )

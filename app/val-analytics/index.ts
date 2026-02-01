@@ -11,6 +11,8 @@ import { economySetupAnalysis } from './economySetupAnalysis'
 import { playerPositionAnalysis } from './playerPositionAnalysis'
 import { lurkerAnalysis } from './lurkerAnalysis'
 import { abilityUsageAnalysis } from './abilityUsageAnalysis'
+import { postPlantAnalysis } from './postPlantAnalysis'
+import { postPlantAbilityAnalysis } from './postPlantAbilityAnalysis'
 
 /**
  * All Valorant analytics functions to run
@@ -25,6 +27,8 @@ const analyticsFunctions: ValorantAnalyticsFunction[] = [
   playerPositionAnalysis,
   lurkerAnalysis,
   abilityUsageAnalysis,
+  postPlantAnalysis,
+  postPlantAbilityAnalysis,
   // Add more Valorant analytics functions here as they are created
 ]
 
@@ -98,4 +102,6 @@ export { analyzeEconomySetups, runEconomySetupAnalysis, economySetupAnalysis, ty
 export { analyzePlayerPositions, runPlayerPositionAnalysis, playerPositionAnalysis, type TeamPlayerPositionAnalysis, type MapPlayerPositions, type PlayerPositionData, type PositionCluster } from './playerPositionAnalysis'
 export { analyzeLurkers, runLurkerAnalysis, lurkerAnalysis, type TeamLurkerAnalysis, type MapLurkerAnalysis, type PlayerLurkerStats } from './lurkerAnalysis'
 export { analyzeAbilityUsage, runAbilityUsageAnalysis, abilityUsageAnalysis, type TeamAbilityAnalysis, type MapAbilityPositions, type PlayerAbilityData, type AbilityCluster } from './abilityUsageAnalysis'
+export { analyzePostPlantPositions, runPostPlantAnalysis, postPlantAnalysis, type TeamPostPlantAnalysis, type MapPostPlantPositions, type PlayerPostPlantData, type PostPlantCluster } from './postPlantAnalysis'
+export { analyzePostPlantAbility, runPostPlantAbilityAnalysis, postPlantAbilityAnalysis, type TeamPostPlantAbilityAnalysis, type MapPostPlantAbilityPositions, type PlayerPostPlantAbilityData, type PostPlantAbilityCluster } from './postPlantAbilityAnalysis'
 export { aggregateValorantScoutingReport, type ValorantScoutingReport } from './scoutingReport'

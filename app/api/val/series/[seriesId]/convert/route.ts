@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readJSON, storeJSON } from '../../../../../storage'
-import { convertValorantSeriesData, ValorantStreamlinedSeries } from '../../../../../utils/valorantSeriesConverter'
+import { convertValorantSeriesData, convertValorantSeriesDataFromLines, ValorantStreamlinedSeries } from '../../../../../utils/valorantSeriesConverter'
 import { runAllValorantAnalytics } from '../../../../../val-analytics'
 
 // Disable Next.js caching for large file downloads
@@ -64,22 +64,71 @@ export async function GET(
     const zip = await JSZip.loadAsync(zipBuffer)
     
     // Find the JSONL file
-    let eventsContent = ''
+    let jsonlFileName = ''
+    let jsonlFile: import('jszip').JSZipObject | null = null
+    
     for (const [filename, file] of Object.entries(zip.files)) {
       if (filename.endsWith('.jsonl')) {
-        eventsContent = await file.async('string')
+        jsonlFileName = filename
+        jsonlFile = file
+        
+        // Check uncompressed size to warn about large files
+        // @ts-expect-error - _data exists on JSZip file objects
+        const uncompressedSize = file._data?.uncompressedSize || 0
+        console.log(`JSONL file: ${filename}, uncompressed size: ${(uncompressedSize / 1024 / 1024).toFixed(2)} MB`)
         break
       }
     }
 
-    if (!eventsContent) {
+    if (!jsonlFile) {
       throw new Error('No JSONL file found in events zip')
     }
-
-    console.log(`Converting Valorant series ${seriesId}...`)
     
-    // Convert the data
-    const streamlined = convertValorantSeriesData(eventsContent)
+    // For very large files, use streaming to process line by line
+    console.log(`Extracting ${jsonlFileName} using streaming...`)
+    
+    // Get the file as an array buffer and process in chunks
+    const uint8Array = await jsonlFile.async('uint8array')
+    const decoder = new TextDecoder('utf-8')
+    
+    // Process in chunks to build lines array
+    const lines: string[] = []
+    let currentLine = ''
+    const CHUNK_SIZE = 10 * 1024 * 1024 // 10MB chunks
+    
+    for (let offset = 0; offset < uint8Array.length; offset += CHUNK_SIZE) {
+      const chunk = uint8Array.slice(offset, Math.min(offset + CHUNK_SIZE, uint8Array.length))
+      const text = decoder.decode(chunk, { stream: offset + CHUNK_SIZE < uint8Array.length })
+      
+      const parts = (currentLine + text).split('\n')
+      currentLine = parts.pop() || '' // Last part might be incomplete
+      
+      for (const line of parts) {
+        if (line.trim()) {
+          lines.push(line)
+        }
+      }
+    }
+    
+    // Don't forget the last line
+    if (currentLine.trim()) {
+      lines.push(currentLine)
+    }
+    
+    console.log(`Extracted ${jsonlFileName}: ${lines.length} lines`)
+    
+    // Build content from lines (only for the converter which expects a string)
+    // But limit to first 50000 lines for very large files to prevent memory issues
+    const MAX_LINES = 50000
+    const limitedLines = lines.slice(0, MAX_LINES)
+    if (lines.length > MAX_LINES) {
+      console.warn(`File has ${lines.length} lines, limiting to first ${MAX_LINES} to prevent memory issues`)
+    }
+
+    console.log(`Converting Valorant series ${seriesId} from ${limitedLines.length} lines...`)
+    
+    // Convert the data directly from lines (avoids joining into a huge string)
+    const streamlined = convertValorantSeriesDataFromLines(limitedLines)
 
     // Cache the result
     await storeJSON(convertedKey, streamlined)

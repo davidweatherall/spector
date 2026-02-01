@@ -13,7 +13,7 @@ import { ValorantAnalyticsResult } from './types'
 // TYPES
 // ============================================================================
 
-const ABILITY_WINDOW_MS = 5000 // Track abilities within 5 seconds of freeze end
+const ABILITY_WINDOW_AFTER_MS = 25000 // Track abilities up to 25 seconds after freeze end
 const CLUSTER_RADIUS = 300 // Units to consider positions as "same spot"
 
 interface RawPosition {
@@ -56,7 +56,8 @@ export interface MapAbilityPositions {
 export interface TeamAbilityAnalysis {
   teamId: string
   teamName: string
-  byMap: MapAbilityPositions[]
+  defensive: MapAbilityPositions[]
+  offensive: MapAbilityPositions[]
 }
 
 export interface AbilityUsageAnalysisResult {
@@ -126,45 +127,36 @@ function clusterAbilityPositions(positions: AbilityPosition[], radius: number): 
 }
 
 /**
- * Get ability usages around freeze time end (before and within 5 seconds after)
+ * Get ability usages (any time before freeze end + up to 25 seconds after)
  * Only tracks the first usage of each ability type per round
  */
-function getEarlyAbilityUsages(
+function getAbilityUsages(
   round: ValorantRound,
   playerId: string,
-  teamId: string,
   agentName: string
 ): AbilityPosition[] {
   const abilityUsages = round.abilityUsages || []
   if (abilityUsages.length === 0) return []
-  
-  // Check if team is on defense (more relevant for setup abilities)
-  const teamSide = round.teamSides.find(ts => ts.teamId === teamId)
-  if (!teamSide || teamSide.side !== 'defender') {
-    return []
-  }
   
   if (!round.freezetimeEndedAt) {
     return []
   }
   
   const freezeEndTime = new Date(round.freezetimeEndedAt).getTime()
-  const windowEnd = freezeEndTime + ABILITY_WINDOW_MS
+  const windowEnd = freezeEndTime + ABILITY_WINDOW_AFTER_MS
   
   const relevantAbilities: AbilityPosition[] = []
-  const seenAbilities = new Set<string>() // Track which ability types we've already counted
+  const seenAbilities = new Set<string>()
   
   for (const usage of abilityUsages) {
     if (usage.playerId !== playerId) continue
     
     const usageTime = new Date(usage.occurredAt).getTime()
     
-    // Include abilities used before freeze end OR within 5 seconds after
+    // Include abilities used any time before freeze end OR up to 25 seconds after
     if (usageTime <= windowEnd) {
-      // Only count first usage of each ability type per round
       if (seenAbilities.has(usage.abilityId)) continue
       
-      // Only include if we have valid position data
       if (usage.position && (usage.position.x !== 0 || usage.position.y !== 0)) {
         seenAbilities.add(usage.abilityId)
         relevantAbilities.push({
@@ -184,15 +176,8 @@ function getEarlyAbilityUsages(
 // MAIN ANALYSIS
 // ============================================================================
 
-export function analyzeAbilityUsage(
-  series: ValorantStreamlinedSeries,
-  teamId: string
-): TeamAbilityAnalysis {
-  const team = series.teams.find(t => t.id === teamId)
-  const teamName = team?.name || 'Unknown Team'
-  
-  // Track positions: map -> player -> ability positions[]
-  const abilityByMapPlayer: {
+function buildAbilityMapData(
+  abilityByMapPlayer: {
     [mapId: string]: {
       [playerId: string]: {
         playerName: string
@@ -200,56 +185,20 @@ export function analyzeAbilityUsage(
         abilities: AbilityPosition[]
       }
     }
-  } = {}
-  
-  for (const game of series.games) {
-    const mapId = game.mapId
-    if (!abilityByMapPlayer[mapId]) {
-      abilityByMapPlayer[mapId] = {}
-    }
-    
-    // Get team players for this game
-    const teamPlayers = game.players.filter(p => p.teamId === teamId)
-    
-    for (const round of game.rounds) {
-      // Check if this is a defensive round for the team
-      const teamSide = round.teamSides.find(ts => ts.teamId === teamId)
-      if (!teamSide || teamSide.side !== 'defender') continue
-      
-      for (const player of teamPlayers) {
-        // Get the player's agent for this game
-        const agentName = player.characterId || 'Unknown'
-        
-        if (!abilityByMapPlayer[mapId][player.id]) {
-          abilityByMapPlayer[mapId][player.id] = {
-            playerName: player.name,
-            totalRounds: 0,
-            abilities: [],
-          }
-        }
-        
-        abilityByMapPlayer[mapId][player.id].totalRounds++
-        
-        const abilities = getEarlyAbilityUsages(round, player.id, teamId, agentName)
-        abilityByMapPlayer[mapId][player.id].abilities.push(...abilities)
-      }
-    }
   }
-  
-  // Build output with clustering
+): MapAbilityPositions[] {
   const byMap: MapAbilityPositions[] = []
   
   for (const [mapId, playerData] of Object.entries(abilityByMapPlayer)) {
     const players: PlayerAbilityData[] = []
     
     for (const [playerId, data] of Object.entries(playerData)) {
-      if (data.abilities.length < 2) continue // Need at least 2 uses
+      if (data.abilities.length < 2) continue
       
       const clusters = clusterAbilityPositions(data.abilities, CLUSTER_RADIUS)
       
-      // Convert clusters to output format
       const abilityClusters: AbilityCluster[] = clusters
-        .filter(c => c.positions.length >= 2) // Only clusters with 2+ occurrences
+        .filter(c => c.positions.length >= 2)
         .map(c => {
           const callout = getClosestCalloutData(mapId, c.centroidX, c.centroidY)
           return {
@@ -265,7 +214,7 @@ export function analyzeAbilityUsage(
           }
         })
         .sort((a, b) => b.count - a.count)
-        .slice(0, 10) // Top 10 ability spots per player
+        .slice(0, 10)
       
       if (abilityClusters.length > 0) {
         players.push({
@@ -277,7 +226,6 @@ export function analyzeAbilityUsage(
       }
     }
     
-    // Sort players by name
     players.sort((a, b) => a.playerName.localeCompare(b.playerName))
     
     if (players.length > 0) {
@@ -289,13 +237,93 @@ export function analyzeAbilityUsage(
     }
   }
   
-  // Sort maps by name
   byMap.sort((a, b) => a.mapName.localeCompare(b.mapName))
+  return byMap
+}
+
+export function analyzeAbilityUsage(
+  series: ValorantStreamlinedSeries,
+  teamId: string
+): TeamAbilityAnalysis {
+  const team = series.teams.find(t => t.id === teamId)
+  const teamName = team?.name || 'Unknown Team'
+  
+  // Track defensive abilities: map -> player -> ability positions[]
+  const defensiveByMapPlayer: {
+    [mapId: string]: {
+      [playerId: string]: {
+        playerName: string
+        totalRounds: number
+        abilities: AbilityPosition[]
+      }
+    }
+  } = {}
+  
+  // Track offensive abilities: map -> player -> ability positions[]
+  const offensiveByMapPlayer: {
+    [mapId: string]: {
+      [playerId: string]: {
+        playerName: string
+        totalRounds: number
+        abilities: AbilityPosition[]
+      }
+    }
+  } = {}
+  
+  for (const game of series.games) {
+    const mapId = game.mapId
+    if (!defensiveByMapPlayer[mapId]) {
+      defensiveByMapPlayer[mapId] = {}
+    }
+    if (!offensiveByMapPlayer[mapId]) {
+      offensiveByMapPlayer[mapId] = {}
+    }
+    
+    const teamPlayers = game.players.filter(p => p.teamId === teamId)
+    
+    for (const round of game.rounds) {
+      const teamSide = round.teamSides.find(ts => ts.teamId === teamId)
+      if (!teamSide) continue
+      
+      for (const player of teamPlayers) {
+        const agentName = player.characterId || 'Unknown'
+        
+        if (teamSide.side === 'defender') {
+          // Defensive round
+          if (!defensiveByMapPlayer[mapId][player.id]) {
+            defensiveByMapPlayer[mapId][player.id] = {
+              playerName: player.name,
+              totalRounds: 0,
+              abilities: [],
+            }
+          }
+          
+          defensiveByMapPlayer[mapId][player.id].totalRounds++
+          const abilities = getAbilityUsages(round, player.id, agentName)
+          defensiveByMapPlayer[mapId][player.id].abilities.push(...abilities)
+        } else if (teamSide.side === 'attacker') {
+          // Offensive round
+          if (!offensiveByMapPlayer[mapId][player.id]) {
+            offensiveByMapPlayer[mapId][player.id] = {
+              playerName: player.name,
+              totalRounds: 0,
+              abilities: [],
+            }
+          }
+          
+          offensiveByMapPlayer[mapId][player.id].totalRounds++
+          const abilities = getAbilityUsages(round, player.id, agentName)
+          offensiveByMapPlayer[mapId][player.id].abilities.push(...abilities)
+        }
+      }
+    }
+  }
   
   return {
     teamId,
     teamName,
-    byMap,
+    defensive: buildAbilityMapData(defensiveByMapPlayer),
+    offensive: buildAbilityMapData(offensiveByMapPlayer),
   }
 }
 
@@ -316,14 +344,15 @@ export function runAbilityUsageAnalysis(
 export function abilityUsageAnalysis(series: ValorantStreamlinedSeries): ValorantAnalyticsResult | null {
   const result = runAbilityUsageAnalysis(series)
   
-  const hasData = result.team1.byMap.length > 0 || result.team2.byMap.length > 0
+  const hasData = result.team1.defensive.length > 0 || result.team2.defensive.length > 0 ||
+                  result.team1.offensive.length > 0 || result.team2.offensive.length > 0
   if (!hasData) {
     return null
   }
   
   return {
     name: 'abilityUsageAnalysis',
-    description: 'Analyzes common ability usage positions at round start',
+    description: 'Analyzes common ability usage positions on defense and offense',
     data: {
       teams: [result.team1, result.team2],
     },

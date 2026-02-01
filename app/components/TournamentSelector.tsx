@@ -144,6 +144,28 @@ interface ValorantScoutingReport {
       }[]
     }[]
   } | null
+  lurkerStats: {
+    byMap: {
+      mapId: string
+      mapName: string
+      totalAttackRounds: number
+      players: {
+        playerId: string
+        playerName: string
+        totalAttackRounds: number
+        lurkCount: number
+        lurkPercentage: number
+        byPushSite: {
+          pushSite: string
+          lurkLocations: {
+            superRegion: string
+            count: number
+            percentage: number
+          }[]
+        }[]
+      }[]
+    }[]
+  } | null
   seriesBreakdown: {
     seriesId: string
     opponent: string
@@ -2335,6 +2357,76 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            )
+          })()}
+          
+          {/* Lurker Analysis Section */}
+          {valScoutingReport.lurkerStats && valScoutingReport.lurkerStats.byMap.length > 0 && (() => {
+            // Filter to only show players with >= 10% lurk rate and exclude "Attacker Side" pushes
+            const filteredMaps = valScoutingReport.lurkerStats.byMap
+              .map(mapData => ({
+                ...mapData,
+                players: mapData.players
+                  .filter(p => p.lurkPercentage >= 10)
+                  .map(player => ({
+                    ...player,
+                    byPushSite: player.byPushSite.filter(ps => ps.pushSite !== 'Attacker Side'),
+                  })),
+              }))
+              .filter(m => m.players.length > 0)
+            
+            if (filteredMaps.length === 0) return null
+            
+            return (
+              <div className={styles.scoutingSection}>
+                <h4 className={styles.sectionTitle}>
+                  Lurker Tendencies
+                  <span className={styles.sectionSubtitle}>Players who split from the pack on attack</span>
+                </h4>
+                
+                <div className={styles.valLurkerContainer}>
+                  {filteredMaps.map((mapData) => (
+                    <div key={mapData.mapId} className={styles.valLurkerMapSection}>
+                      <div className={styles.valLurkerMapHeader}>
+                        {mapData.mapName}
+                        <span className={styles.valLurkerRoundCount}>({mapData.totalAttackRounds} attack rounds)</span>
+                      </div>
+                      
+                      <div className={styles.valLurkerPlayers}>
+                        {mapData.players.map((player) => (
+                          <div key={player.playerId} className={styles.valLurkerPlayerRow}>
+                            <div className={styles.valLurkerPlayerHeader}>
+                              <span className={styles.valLurkerPlayerName}>{player.playerName}</span>
+                              <span className={styles.valLurkerPlayerStats}>
+                                Lurks {Math.round(player.lurkPercentage)}% ({player.lurkCount}/{player.totalAttackRounds})
+                              </span>
+                            </div>
+                            
+                            {player.byPushSite.length > 0 && (
+                              <div className={styles.valLurkerByPush}>
+                                {player.byPushSite.map((pushData) => (
+                                  <div key={pushData.pushSite} className={styles.valLurkerPushRow}>
+                                    <span className={styles.valLurkerPushLabel}>
+                                      When team goes {pushData.pushSite}:
+                                    </span>
+                                    <div className={styles.valLurkerLocations}>
+                                      {pushData.lurkLocations.slice(0, 3).map((loc, idx) => (
+                                        <span key={idx} className={styles.valLurkerLocation}>
+                                          {loc.superRegion} ({loc.count})
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )

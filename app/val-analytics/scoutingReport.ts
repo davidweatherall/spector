@@ -152,6 +152,30 @@ export interface ValorantScoutingReport {
     }[]
   } | null
   
+  // Lurker Analysis
+  lurkerStats: {
+    byMap: {
+      mapId: string
+      mapName: string
+      totalAttackRounds: number
+      players: {
+        playerId: string
+        playerName: string
+        totalAttackRounds: number
+        lurkCount: number
+        lurkPercentage: number
+        byPushSite: {
+          pushSite: string
+          lurkLocations: {
+            superRegion: string
+            count: number
+            percentage: number
+          }[]
+        }[]
+      }[]
+    }[]
+  } | null
+  
   // Series breakdown for detailed view
   seriesBreakdown: {
     seriesId: string
@@ -387,6 +411,24 @@ export function aggregateValorantScoutingReport(
         playerName: string
         totalRounds: number
         clusters: PlayerCluster[]
+      }
+    }
+  } = {}
+  
+  // Collect lurker data
+  // map -> player -> { totalAttackRounds, lurkCount, byPushSite }
+  type LurkLocationData = { superRegion: string; count: number }
+  type PushSiteData = { [lurkRegion: string]: number }
+  const lurkerStatsByMap: {
+    [mapId: string]: {
+      totalAttackRounds: number
+      players: {
+        [playerId: string]: {
+          playerName: string
+          totalAttackRounds: number
+          lurkCount: number
+          byPushSite: { [pushSite: string]: PushSiteData }
+        }
       }
     }
   } = {}
@@ -766,6 +808,57 @@ export function aggregateValorantScoutingReport(
       }
     }
     
+    // Get lurker analysis data
+    const lurkerData = collectAnalyticsData([result], 'lurkerAnalysis')
+    
+    for (const data of lurkerData) {
+      const ourTeamData = data.teams?.find((t: any) => t.teamId === teamId)
+      
+      if (ourTeamData) {
+        for (const mapData of ourTeamData.byMap || []) {
+          const mapId = mapData.mapId
+          
+          if (!lurkerStatsByMap[mapId]) {
+            lurkerStatsByMap[mapId] = {
+              totalAttackRounds: 0,
+              players: {},
+            }
+          }
+          
+          lurkerStatsByMap[mapId].totalAttackRounds += mapData.totalAttackRounds || 0
+          
+          for (const player of mapData.players || []) {
+            if (!lurkerStatsByMap[mapId].players[player.playerId]) {
+              lurkerStatsByMap[mapId].players[player.playerId] = {
+                playerName: player.playerName,
+                totalAttackRounds: 0,
+                lurkCount: 0,
+                byPushSite: {},
+              }
+            }
+            
+            const playerData = lurkerStatsByMap[mapId].players[player.playerId]
+            playerData.totalAttackRounds += player.totalAttackRounds || 0
+            playerData.lurkCount += player.lurkCount || 0
+            
+            // Merge byPushSite data
+            for (const pushSiteData of player.byPushSite || []) {
+              if (!playerData.byPushSite[pushSiteData.pushSite]) {
+                playerData.byPushSite[pushSiteData.pushSite] = {}
+              }
+              
+              for (const lurkLoc of pushSiteData.lurkLocations || []) {
+                if (!playerData.byPushSite[pushSiteData.pushSite][lurkLoc.superRegion]) {
+                  playerData.byPushSite[pushSiteData.pushSite][lurkLoc.superRegion] = 0
+                }
+                playerData.byPushSite[pushSiteData.pushSite][lurkLoc.superRegion] += lurkLoc.count
+              }
+            }
+          }
+        }
+      }
+    }
+    
     // Build series breakdown (need to get raw series data)
     // For now, we'll extract what we can from analytics
     const seriesInfo: ValorantScoutingReport['seriesBreakdown'][0] = {
@@ -1073,6 +1166,50 @@ export function aggregateValorantScoutingReport(
             }))
             .filter(p => p.clusters.length > 0)
             .sort((a, b) => a.playerName.localeCompare(b.playerName)),
+        }))
+        .filter(m => m.players.length > 0)
+        .sort((a, b) => a.mapName.localeCompare(b.mapName)),
+    } : null,
+    
+    // Lurker Stats
+    lurkerStats: Object.keys(lurkerStatsByMap).length > 0 ? {
+      byMap: Object.entries(lurkerStatsByMap)
+        .map(([mapId, mapData]) => ({
+          mapId,
+          mapName: formatMapName(mapId),
+          totalAttackRounds: mapData.totalAttackRounds,
+          players: Object.entries(mapData.players)
+            .map(([playerId, playerData]) => ({
+              playerId,
+              playerName: playerData.playerName,
+              totalAttackRounds: playerData.totalAttackRounds,
+              lurkCount: playerData.lurkCount,
+              lurkPercentage: playerData.totalAttackRounds > 0 
+                ? (playerData.lurkCount / playerData.totalAttackRounds) * 100 
+                : 0,
+              byPushSite: Object.entries(playerData.byPushSite)
+                .map(([pushSite, lurkRegions]) => {
+                  const totalForPush = Object.values(lurkRegions).reduce((a, b) => a + b, 0)
+                  return {
+                    pushSite,
+                    lurkLocations: Object.entries(lurkRegions)
+                      .map(([superRegion, count]) => ({
+                        superRegion,
+                        count,
+                        percentage: totalForPush > 0 ? (count / totalForPush) * 100 : 0,
+                      }))
+                      .sort((a, b) => b.count - a.count),
+                  }
+                })
+                .filter(ps => ps.lurkLocations.length > 0)
+                .sort((a, b) => {
+                  const totalA = a.lurkLocations.reduce((sum, l) => sum + l.count, 0)
+                  const totalB = b.lurkLocations.reduce((sum, l) => sum + l.count, 0)
+                  return totalB - totalA
+                }),
+            }))
+            .filter(p => p.lurkCount > 0)
+            .sort((a, b) => b.lurkPercentage - a.lurkPercentage),
         }))
         .filter(m => m.players.length > 0)
         .sort((a, b) => a.mapName.localeCompare(b.mapName)),

@@ -9,6 +9,7 @@ import { defensiveSetupAnalysis } from './defensiveSetupAnalysis'
 import { offensiveSetupAnalysis } from './offensiveSetupAnalysis'
 import { economySetupAnalysis } from './economySetupAnalysis'
 import { playerPositionAnalysis } from './playerPositionAnalysis'
+import { lurkerAnalysis } from './lurkerAnalysis'
 
 /**
  * All Valorant analytics functions to run
@@ -21,6 +22,7 @@ const analyticsFunctions: ValorantAnalyticsFunction[] = [
   offensiveSetupAnalysis,
   economySetupAnalysis,
   playerPositionAnalysis,
+  lurkerAnalysis,
   // Add more Valorant analytics functions here as they are created
 ]
 
@@ -92,4 +94,5 @@ export { analyzeDefensiveSetups, runDefensiveSetupAnalysis, type TeamDefensiveAn
 export { analyzeOffensiveSetups, runOffensiveSetupAnalysis, type TeamOffensiveAnalysis, type MapOffensiveSetups, type OffensiveFormation } from './offensiveSetupAnalysis'
 export { analyzeEconomySetups, runEconomySetupAnalysis, economySetupAnalysis, type TeamEconomyAnalysis, type EconomySetupData, type MapEconomySetups } from './economySetupAnalysis'
 export { analyzePlayerPositions, runPlayerPositionAnalysis, playerPositionAnalysis, type TeamPlayerPositionAnalysis, type MapPlayerPositions, type PlayerPositionData, type PositionCluster } from './playerPositionAnalysis'
+export { analyzeLurkers, runLurkerAnalysis, lurkerAnalysis, type TeamLurkerAnalysis, type MapLurkerAnalysis, type PlayerLurkerStats } from './lurkerAnalysis'
 export { aggregateValorantScoutingReport, type ValorantScoutingReport } from './scoutingReport'

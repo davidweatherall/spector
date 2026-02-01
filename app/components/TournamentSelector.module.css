@@ -2704,3 +2704,97 @@
   min-width: 28px;
   text-align: right;
 }
+
+/* Lurker Analysis */
+.valLurkerContainer {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.valLurkerMapSection {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.valLurkerMapHeader {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.valLurkerRoundCount {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.valLurkerPlayers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.valLurkerPlayerRow {
+  padding: 0.5rem;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  border-radius: 6px;
+}
+
+.valLurkerPlayerHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.valLurkerPlayerName {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #a78bfa;
+}
+
+.valLurkerPlayerStats {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.valLurkerByPush {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.valLurkerPushRow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+}
+
+.valLurkerPushLabel {
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.valLurkerLocations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.valLurkerLocation {
+  padding: 0.125rem 0.375rem;
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 3px;
+  color: #c4b5fd;
+  font-size: 0.625rem;
+}

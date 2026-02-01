@@ -166,6 +166,28 @@ interface ValorantScoutingReport {
       }[]
     }[]
   } | null
+  abilityUsage: {
+    byMap: {
+      mapId: string
+      mapName: string
+      players: {
+        playerId: string
+        playerName: string
+        totalRounds: number
+        clusters: {
+          centroidX: number
+          centroidY: number
+          callout: string
+          superRegion: string
+          abilityId: string
+          agentName: string
+          count: number
+          percentage: number
+          positions: { x: number; y: number }[]
+        }[]
+      }[]
+    }[]
+  } | null
   seriesBreakdown: {
     seriesId: string
     opponent: string
@@ -214,6 +236,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const [selectedValMapTab, setSelectedValMapTab] = useState<string | null>(null)
   const [selectedPlayerPosMap, setSelectedPlayerPosMap] = useState<string | null>(null)
   const [selectedPlayerPositions, setSelectedPlayerPositions] = useState<Set<string>>(new Set())
+  const [selectedAbilityMap, setSelectedAbilityMap] = useState<string | null>(null)
+  const [selectedAbilities, setSelectedAbilities] = useState<Set<string>>(new Set())
   const [customGameCount, setCustomGameCount] = useState<string>('10')
   const [selectedGoldLeadRole, setSelectedGoldLeadRole] = useState<'top' | 'jungle' | 'mid' | 'bot' | 'support'>('mid')
   const [selectedCounterPickTab, setSelectedCounterPickTab] = useState<'top-cp' | 'top-cpd' | 'mid-cp' | 'mid-cpd'>('mid-cp')
@@ -499,6 +523,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
     setValScoutingReport(null)
     setSelectedPlayerPosMap(null)
     setSelectedPlayerPositions(new Set())
+    setSelectedAbilityMap(null)
+    setSelectedAbilities(new Set())
     
     // Apply limit if specified
     const gamesToAnalyze = limit ? games.slice(0, limit) : games
@@ -2247,7 +2273,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
             
             if (!currentMapData) return null
             
-            // Collect all clusters with >20% for all players on this map
+            // Collect all clusters with >20% for all players on this map, sorted by percentage
             const allClusters = currentMapData.players.flatMap(player =>
               player.clusters
                 .filter(cluster => cluster.percentage >= 20)
@@ -2259,7 +2285,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                   positions: cluster.positions || [],
                   count: cluster.count,
                 }))
-            )
+            ).sort((a, b) => b.percentage - a.percentage)
             
             // Expand selected clusters into individual position dots
             const staticPositions = allClusters
@@ -2427,6 +2453,132 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )
+          })()}
+          
+          {/* Ability Usage Section */}
+          {valScoutingReport.abilityUsage && valScoutingReport.abilityUsage.byMap.length > 0 && (() => {
+            // Set default map if not selected
+            const availableMaps = valScoutingReport.abilityUsage.byMap
+            const currentMapId = selectedAbilityMap || availableMaps[0]?.mapId
+            const currentMapData = availableMaps.find(m => m.mapId === currentMapId)
+            
+            if (!currentMapData) return null
+            
+            // Collect all clusters with >15% for all players on this map, sorted by percentage
+            const allClusters = currentMapData.players.flatMap(player =>
+              player.clusters
+                .filter(cluster => cluster.percentage >= 15)
+                .map((cluster, idx) => ({
+                  id: `${player.playerId}-${cluster.abilityId}-${cluster.agentName}-${idx}`,
+                  playerName: player.playerName,
+                  callout: cluster.callout,
+                  abilityId: cluster.abilityId,
+                  agentName: cluster.agentName,
+                  percentage: cluster.percentage,
+                  positions: cluster.positions || [],
+                  count: cluster.count,
+                }))
+            ).sort((a, b) => b.percentage - a.percentage)
+            
+            // Expand selected clusters into individual position dots
+            const staticPositions = allClusters
+              .filter(cluster => selectedAbilities.has(cluster.id))
+              .flatMap(cluster => 
+                cluster.positions.map((pos, posIdx) => ({
+                  id: `${cluster.id}-pos-${posIdx}`,
+                  label: cluster.playerName,
+                  x: pos.x,
+                  y: pos.y,
+                  percentage: cluster.percentage,
+                  tooltip: `${cluster.playerName} on ${cluster.agentName}: ${cluster.abilityId} at ${cluster.callout} (${Math.round(cluster.percentage)}%)`,
+                }))
+              )
+            
+            return (
+              <div className={styles.scoutingSection}>
+                <h4 className={styles.sectionTitle}>
+                  Ability Setups
+                  <span className={styles.sectionSubtitle}>Ability usage at round start (defense)</span>
+                </h4>
+                
+                <div className={styles.valPlayerPosVisualContainer}>
+                  {/* Map Selector */}
+                  <div className={styles.valPlayerPosMapSelector}>
+                    {availableMaps.map((mapData) => (
+                      <button
+                        key={mapData.mapId}
+                        className={`${styles.valPlayerPosMapBtn} ${mapData.mapId === currentMapId ? styles.valPlayerPosMapBtnActive : ''}`}
+                        onClick={() => {
+                          setSelectedAbilityMap(mapData.mapId)
+                          setSelectedAbilities(new Set())
+                        }}
+                      >
+                        {mapData.mapName}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Map with positions */}
+                  <div className={styles.valPlayerPosMapWrapper}>
+                    <ValorantMapPlayer
+                      mode="static"
+                      mapName={currentMapId}
+                      staticPositions={staticPositions}
+                      mapSize={400}
+                      dotSize="small"
+                    />
+                    
+                    {/* Ability Filters */}
+                    <div className={styles.valPlayerPosFilters}>
+                      <div className={styles.valPlayerPosFiltersHeader}>
+                        <span>Select abilities to display</span>
+                        <button
+                          className={styles.valPlayerPosSelectAll}
+                          onClick={() => {
+                            if (selectedAbilities.size === allClusters.length) {
+                              setSelectedAbilities(new Set())
+                            } else {
+                              setSelectedAbilities(new Set(allClusters.map(c => c.id)))
+                            }
+                          }}
+                        >
+                          {selectedAbilities.size === allClusters.length ? 'Clear All' : 'Select All'}
+                        </button>
+                      </div>
+                      <div className={styles.valPlayerPosFilterList}>
+                        {allClusters.map((cluster) => (
+                          <label
+                            key={cluster.id}
+                            className={`${styles.valPlayerPosFilterItem} ${selectedAbilities.has(cluster.id) ? styles.valPlayerPosFilterItemActive : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedAbilities.has(cluster.id)}
+                              onChange={(e) => {
+                                const newSet = new Set(selectedAbilities)
+                                if (e.target.checked) {
+                                  newSet.add(cluster.id)
+                                } else {
+                                  newSet.delete(cluster.id)
+                                }
+                                setSelectedAbilities(newSet)
+                              }}
+                              className={styles.valPlayerPosCheckbox}
+                            />
+                            <span className={styles.valPlayerPosFilterLabel}>
+                              {cluster.playerName} on {cluster.agentName}: {cluster.abilityId} @ {cluster.callout}
+                            </span>
+                            <span className={styles.valPlayerPosFilterPercent}>
+                              {cluster.count} ({Math.round(cluster.percentage)}%)
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )

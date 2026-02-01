@@ -176,6 +176,30 @@ export interface ValorantScoutingReport {
     }[]
   } | null
   
+  // Ability Usage Analysis
+  abilityUsage: {
+    byMap: {
+      mapId: string
+      mapName: string
+      players: {
+        playerId: string
+        playerName: string
+        totalRounds: number
+        clusters: {
+          centroidX: number
+          centroidY: number
+          callout: string
+          superRegion: string
+          abilityId: string
+          agentName: string
+          count: number
+          percentage: number
+          positions: { x: number; y: number }[]
+        }[]
+      }[]
+    }[]
+  } | null
+  
   // Series breakdown for detailed view
   seriesBreakdown: {
     seriesId: string
@@ -429,6 +453,19 @@ export function aggregateValorantScoutingReport(
           lurkCount: number
           byPushSite: { [pushSite: string]: PushSiteData }
         }
+      }
+    }
+  } = {}
+  
+  // Collect ability usage data
+  // map -> player -> clusters[]
+  type AbilityClusterData = { centroidX: number; centroidY: number; callout: string; superRegion: string; abilityId: string; agentName: string; count: number; positions: { x: number; y: number }[] }
+  const abilityUsageByMap: {
+    [mapId: string]: {
+      [playerId: string]: {
+        playerName: string
+        totalRounds: number
+        clusters: AbilityClusterData[]
       }
     }
   } = {}
@@ -841,7 +878,7 @@ export function aggregateValorantScoutingReport(
             playerData.totalAttackRounds += player.totalAttackRounds || 0
             playerData.lurkCount += player.lurkCount || 0
             
-            // Merge byPushSite data
+// Merge byPushSite data
             for (const pushSiteData of player.byPushSite || []) {
               if (!playerData.byPushSite[pushSiteData.pushSite]) {
                 playerData.byPushSite[pushSiteData.pushSite] = {}
@@ -859,6 +896,63 @@ export function aggregateValorantScoutingReport(
       }
     }
     
+    // Get ability usage data
+    const abilityData = collectAnalyticsData([result], 'abilityUsageAnalysis')
+    
+    for (const data of abilityData) {
+      const ourTeamData = data.teams?.find((t: any) => t.teamId === teamId)
+      
+      if (ourTeamData) {
+        for (const mapData of ourTeamData.byMap || []) {
+          const mapId = mapData.mapId
+          
+          if (!abilityUsageByMap[mapId]) {
+            abilityUsageByMap[mapId] = {}
+          }
+          
+          for (const player of mapData.players || []) {
+            if (!abilityUsageByMap[mapId][player.playerId]) {
+              abilityUsageByMap[mapId][player.playerId] = {
+                playerName: player.playerName,
+                totalRounds: 0,
+                clusters: [],
+              }
+            }
+            
+            abilityUsageByMap[mapId][player.playerId].totalRounds += player.totalRounds || 0
+            
+            // Merge clusters
+            for (const cluster of player.clusters || []) {
+              // Find existing cluster with same callout, abilityId, and agentName
+              const existing = abilityUsageByMap[mapId][player.playerId].clusters.find(
+                c => c.callout === cluster.callout && c.abilityId === cluster.abilityId && c.agentName === cluster.agentName
+              )
+              if (existing) {
+                existing.count += cluster.count
+                existing.positions = [...existing.positions, ...(cluster.positions || [])]
+                // Recalculate centroid
+                if (existing.positions.length > 0) {
+                  existing.centroidX = existing.positions.reduce((sum, p) => sum + p.x, 0) / existing.positions.length
+                  existing.centroidY = existing.positions.reduce((sum, p) => sum + p.y, 0) / existing.positions.length
+                }
+              } else {
+                abilityUsageByMap[mapId][player.playerId].clusters.push({
+                  centroidX: cluster.centroidX || 0,
+                  centroidY: cluster.centroidY || 0,
+                  callout: cluster.callout,
+                  superRegion: cluster.superRegion,
+                  abilityId: cluster.abilityId,
+                  agentName: cluster.agentName || 'Unknown',
+                  count: cluster.count,
+                  positions: cluster.positions || [],
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Build series breakdown (need to get raw series data)
     // For now, we'll extract what we can from analytics
     const seriesInfo: ValorantScoutingReport['seriesBreakdown'][0] = {
@@ -1210,6 +1304,32 @@ export function aggregateValorantScoutingReport(
             }))
             .filter(p => p.lurkCount > 0)
             .sort((a, b) => b.lurkPercentage - a.lurkPercentage),
+        }))
+        .filter(m => m.players.length > 0)
+        .sort((a, b) => a.mapName.localeCompare(b.mapName)),
+    } : null,
+    
+    // Ability Usage
+    abilityUsage: Object.keys(abilityUsageByMap).length > 0 ? {
+      byMap: Object.entries(abilityUsageByMap)
+        .map(([mapId, players]) => ({
+          mapId,
+          mapName: formatMapName(mapId),
+          players: Object.entries(players)
+            .map(([playerId, data]) => ({
+              playerId,
+              playerName: data.playerName,
+              totalRounds: data.totalRounds,
+              clusters: data.clusters
+                .map(c => ({
+                  ...c,
+                  percentage: data.totalRounds > 0 ? (c.count / data.totalRounds) * 100 : 0,
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10),
+            }))
+            .filter(p => p.clusters.length > 0)
+            .sort((a, b) => a.playerName.localeCompare(b.playerName)),
         }))
         .filter(m => m.players.length > 0)
         .sort((a, b) => a.mapName.localeCompare(b.mapName)),

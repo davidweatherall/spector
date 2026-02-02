@@ -736,16 +736,36 @@ export function aggregateValorantScoutingReport(
           }
           gamesByMap[mapId] += mapPicks.gamesPlayed
           
-          // Re-calculate from frequencies
+          // Re-calculate from frequencies with win tracking
           for (const freq of mapPicks.agentPicks || []) {
-            for (let i = 0; i < freq.count; i++) {
+            const wins = freq.wins || 0
+            const losses = freq.count - wins
+            
+            // Push wins first
+            for (let i = 0; i < wins; i++) {
               agentPicksByMap[mapId].push({
                 agentId: freq.agentId,
                 agentName: freq.agentName,
+                isWin: true,
               })
               allAgentPicks.push({
                 agentId: freq.agentId,
                 agentName: freq.agentName,
+                isWin: true,
+              })
+            }
+            
+            // Then push losses
+            for (let i = 0; i < losses; i++) {
+              agentPicksByMap[mapId].push({
+                agentId: freq.agentId,
+                agentName: freq.agentName,
+                isWin: false,
+              })
+              allAgentPicks.push({
+                agentId: freq.agentId,
+                agentName: freq.agentName,
+                isWin: false,
               })
             }
           }
@@ -1028,6 +1048,8 @@ export function aggregateValorantScoutingReport(
     // Get ability usage data
     const abilityData = collectAnalyticsData([result], 'abilityUsageAnalysis')
     
+    const MERGE_CLUSTER_RADIUS = 400 // Merge clusters within this distance
+    
     const mergeAbilityClusters = (targetMap: AbilityMapData, mapDataList: any[]) => {
       for (const mapData of mapDataList || []) {
         const mapId = mapData.mapId
@@ -1048,9 +1070,24 @@ export function aggregateValorantScoutingReport(
           targetMap[mapId][player.playerId].totalRounds += player.totalRounds || 0
           
           for (const cluster of player.clusters || []) {
-            const existing = targetMap[mapId][player.playerId].clusters.find(
-              c => c.callout === cluster.callout && c.abilityId === cluster.abilityId && c.agentName === cluster.agentName
-            )
+            // Find existing cluster with same ability+agent that's either:
+            // 1. Same callout, OR
+            // 2. Within spatial merge radius
+            const existing = targetMap[mapId][player.playerId].clusters.find(c => {
+              if (c.abilityId !== cluster.abilityId || c.agentName !== cluster.agentName) {
+                return false
+              }
+              // Same callout
+              if (c.callout === cluster.callout) {
+                return true
+              }
+              // Or within spatial radius
+              const dx = c.centroidX - (cluster.centroidX || 0)
+              const dy = c.centroidY - (cluster.centroidY || 0)
+              const dist = Math.sqrt(dx * dx + dy * dy)
+              return dist <= MERGE_CLUSTER_RADIUS
+            })
+            
             if (existing) {
               existing.count += cluster.count
               existing.positions = [...existing.positions, ...(cluster.positions || [])]
@@ -1595,25 +1632,41 @@ export function aggregateValorantScoutingReport(
         .filter(m => m.players.length > 0)
         .sort((a, b) => a.mapName.localeCompare(b.mapName)),
       offensive: Object.entries(offensiveAbilityByMap)
-        .map(([mapId, players]) => ({
-          mapId,
-          mapName: formatMapName(mapId),
-          players: Object.entries(players)
-            .map(([playerId, data]) => ({
-              playerId,
-              playerName: data.playerName,
-              totalRounds: data.totalRounds,
-              clusters: data.clusters
-                .map(c => ({
-                  ...c,
-                  percentage: data.totalRounds > 0 ? (c.count / data.totalRounds) * 100 : 0,
-                }))
-                .sort((a, b) => b.count - a.count)
-                .slice(0, 10),
-            }))
-            .filter(p => p.clusters.length > 0)
-            .sort((a, b) => a.playerName.localeCompare(b.playerName)),
-        }))
+        .map(([mapId, players]) => {
+          // Calculate total usages per ability type (agentName:abilityId) across all players for this map
+          const abilityTypeTotals: { [key: string]: number } = {}
+          for (const data of Object.values(players)) {
+            for (const cluster of data.clusters) {
+              const key = `${cluster.agentName}:${cluster.abilityId}`
+              abilityTypeTotals[key] = (abilityTypeTotals[key] || 0) + cluster.count
+            }
+          }
+          
+          return {
+            mapId,
+            mapName: formatMapName(mapId),
+            players: Object.entries(players)
+              .map(([playerId, data]) => ({
+                playerId,
+                playerName: data.playerName,
+                totalRounds: data.totalRounds,
+                clusters: data.clusters
+                  .map(c => {
+                    // For offensive abilities, percentage is based on total usages of this ability type
+                    const abilityKey = `${c.agentName}:${c.abilityId}`
+                    const totalForThisAbility = abilityTypeTotals[abilityKey] || 1
+                    return {
+                      ...c,
+                      percentage: (c.count / totalForThisAbility) * 100,
+                    }
+                  })
+                  .sort((a, b) => b.count - a.count)
+                  .slice(0, 10),
+              }))
+              .filter(p => p.clusters.length > 0)
+              .sort((a, b) => a.playerName.localeCompare(b.playerName)),
+          }
+        })
         .filter(m => m.players.length > 0)
         .sort((a, b) => a.mapName.localeCompare(b.mapName)),
     } : null,

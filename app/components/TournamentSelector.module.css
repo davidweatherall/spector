@@ -2955,7 +2955,7 @@
 
 .valLurkerPlayers {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 0.75rem;
 }
 
@@ -2964,6 +2964,7 @@
   background: rgba(139, 92, 246, 0.08);
   border: 1px solid rgba(139, 92, 246, 0.15);
   border-radius: 6px;
+  width: 400px;
 }
 
 .valLurkerPlayerHeader {

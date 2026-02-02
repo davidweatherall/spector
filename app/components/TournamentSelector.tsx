@@ -289,7 +289,9 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const [selectedPostPlantMap, setSelectedPostPlantMap] = useState<string | null>(null)
   const [selectedPostPlantSite, setSelectedPostPlantSite] = useState<string | null>(null)
   const [selectedPostPlantPositions, setSelectedPostPlantPositions] = useState<Set<string> | null>(null)
-  const [selectedMapAnalysisTab, setSelectedMapAnalysisTab] = useState<'positions' | 'defAbility' | 'offAbility' | 'postPlant'>('positions')
+  const [selectedMapAnalysisTab, setSelectedMapAnalysisTab] = useState<'positions' | 'allAbilities' | 'defAbility' | 'offAbility' | 'postPlant'>('positions')
+  const [selectedAllAbilitySide, setSelectedAllAbilitySide] = useState<'defender' | 'attacker'>('defender')
+  const [selectedAllAbilities, setSelectedAllAbilities] = useState<Set<string> | null>(null)
   const [customGameCount, setCustomGameCount] = useState<string>('10')
   const [selectedGoldLeadRole, setSelectedGoldLeadRole] = useState<'top' | 'jungle' | 'mid' | 'bot' | 'support'>('mid')
   const [selectedCounterPickTab, setSelectedCounterPickTab] = useState<'top-cp' | 'top-cpd' | 'mid-cp' | 'mid-cpd'>('mid-cp')
@@ -576,6 +578,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
     setSelectedPerMapTab(null)
     setSelectedPlayerPosMap(null)
     setSelectedPlayerPositions(null)
+    setSelectedAllAbilities(null)
     setSelectedDefAbilityMap(null)
     setSelectedDefAbilities(null)
     setSelectedOffAbilityMap(null)
@@ -2060,6 +2063,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                           setSelectedPerMapTab(mapData.mapId)
                           // Reset selections to null so new map gets default first-item selection
                           setSelectedPlayerPositions(null)
+                          setSelectedAllAbilities(null)
                           setSelectedDefAbilities(null)
                           setSelectedOffAbilities(null)
                           setSelectedPostPlantSite(null)
@@ -2316,12 +2320,15 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                 {/* Unified Map Analysis Section */}
                 {(playerPositionsMapData || defAbilityMapData || offAbilityMapData || postPlantMapData) && (() => {
                   // Determine available tabs
-                  const tabs: { id: 'positions' | 'defAbility' | 'offAbility' | 'postPlant'; label: string; available: boolean }[] = [
+                  type TabId = 'positions' | 'allAbilities' | 'defAbility' | 'offAbility' | 'postPlant'
+                  const allTabs: { id: TabId; label: string; available: boolean }[] = [
                     { id: 'positions', label: 'Common Defender Locations', available: !!playerPositionsMapData },
+                    { id: 'allAbilities', label: 'All Abilities', available: !!(defAbilityMapData || offAbilityMapData) },
                     { id: 'defAbility', label: 'Defender Abilities', available: !!defAbilityMapData },
                     { id: 'offAbility', label: 'Attacker Abilities', available: !!offAbilityMapData },
                     { id: 'postPlant', label: 'Post-Plant', available: !!postPlantMapData },
-                  ].filter(t => t.available)
+                  ]
+                  const tabs = allTabs.filter(t => t.available)
                   
                   if (tabs.length === 0) return null
                   
@@ -2331,8 +2338,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                   // Build clusters and positions based on active tab
                   let allClusters: { id: string; playerName: string; callout: string; percentage: number; positions: { x: number; y: number }[]; count: number; extra?: string }[] = []
                   let effectiveSelection: Set<string> = new Set()
-                  let setSelection: (s: Set<string>) => void = () => {}
-                  let selectedSet: Set<string> = new Set()
+                  let setSelection: (s: Set<string> | null) => void = () => {}
+                  let selectedSet: Set<string> | null = null
                   let subtitle = ''
                   
                   // Filter out placeholder players like "Player 1", "Player 2", etc.
@@ -2354,6 +2361,44 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                     selectedSet = selectedPlayerPositions
                     setSelection = setSelectedPlayerPositions
                     subtitle = 'Positions held >20% of rounds'
+                  } else if (activeTab === 'allAbilities') {
+                    // All Abilities tab - group by agent + ability type (combine all positions)
+                    const abilityData = selectedAllAbilitySide === 'defender' ? defAbilityMapData : offAbilityMapData
+                    if (abilityData) {
+                      // Group all clusters by agent + ability type
+                      const grouped: { [key: string]: { agentName: string; abilityId: string; positions: { x: number; y: number }[]; count: number } } = {}
+                      
+                      for (const player of abilityData.players.filter(p => isRealPlayer(p.playerName))) {
+                        for (const cluster of player.clusters) {
+                          const key = `${cluster.agentName}-${cluster.abilityId}`
+                          if (!grouped[key]) {
+                            grouped[key] = {
+                              agentName: cluster.agentName,
+                              abilityId: cluster.abilityId,
+                              positions: [],
+                              count: 0,
+                            }
+                          }
+                          grouped[key].positions.push(...(cluster.positions || []))
+                          grouped[key].count += cluster.count
+                        }
+                      }
+                      
+                      allClusters = Object.entries(grouped)
+                        .map(([key, data]) => ({
+                          id: `all-${selectedAllAbilitySide}-${key}`,
+                          playerName: data.agentName, // Using agentName in playerName field for display
+                          callout: '', // Not used for display
+                          percentage: 0, // Not relevant for this view
+                          positions: data.positions,
+                          count: data.count,
+                          extra: data.abilityId,
+                        }))
+                        .sort((a, b) => a.playerName.localeCompare(b.playerName) || (a.extra || '').localeCompare(b.extra || ''))
+                    }
+                    selectedSet = selectedAllAbilities
+                    setSelection = setSelectedAllAbilities
+                    subtitle = `All ${selectedAllAbilitySide} ability usage (25s after round start)`
                   } else if (activeTab === 'defAbility' && defAbilityMapData) {
                     allClusters = defAbilityMapData.players
                       .filter(player => isRealPlayer(player.playerName))
@@ -2375,19 +2420,19 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                     allClusters = offAbilityMapData.players
                       .filter(player => isRealPlayer(player.playerName))
                       .flatMap(player =>
-                        player.clusters.filter(c => c.percentage >= 15).map((c, idx) => ({
-                          id: `off-${player.playerId}-${c.abilityId}-${c.agentName}-${idx}`,
-                          playerName: player.playerName,
+                        player.clusters.filter(c => c.count >= 2).map((c, idx) => ({
+                          id: `off-${player.playerId}-${c.abilityId}-${c.agentName}-${c.callout}-${idx}`,
+                          playerName: `${c.agentName}: ${c.abilityId}`,
                           callout: c.callout,
                           percentage: c.percentage,
                           positions: c.positions || [],
                           count: c.count,
-                          extra: c.abilityId,
+                          // No extra field - agentName:abilityId is already in playerName
                         }))
-                      ).sort((a, b) => b.percentage - a.percentage)
+                      ).sort((a, b) => b.count - a.count) // Sort by count since we're filtering by count
                     selectedSet = selectedOffAbilities
                     setSelection = setSelectedOffAbilities
-                    subtitle = 'Up to 25s after attacker round start'
+                    subtitle = 'Abilities used ≥2 times (25s after round start)'
                   } else if (activeTab === 'postPlant' && postPlantMapData) {
                     const sites = postPlantMapData.bySite
                     const site = selectedPostPlantSite || sites[0]?.site
@@ -2424,7 +2469,9 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                       x: pos.x,
                       y: pos.y,
                       percentage: c.percentage,
-                      tooltip: `${c.playerName}: ${c.callout} (${Math.round(c.percentage)}%)`,
+                      tooltip: c.callout 
+                        ? `${c.playerName}: ${c.callout} (${Math.round(c.percentage)}%)`
+                        : `${c.playerName}: ${c.extra || 'ability'}`,
                     })))
                   
                   return (
@@ -2441,6 +2488,22 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                             </button>
                           ))}
                         </div>
+                        {activeTab === 'allAbilities' && (
+                          <div className={styles.valPerMapSiteSelector}>
+                            <button
+                              className={`${styles.valPerMapSiteBtn} ${selectedAllAbilitySide === 'defender' ? styles.valPerMapSiteBtnActive : ''}`}
+                              onClick={() => { setSelectedAllAbilitySide('defender'); setSelectedAllAbilities(null) }}
+                            >
+                              Defender
+                            </button>
+                            <button
+                              className={`${styles.valPerMapSiteBtn} ${selectedAllAbilitySide === 'attacker' ? styles.valPerMapSiteBtnActive : ''}`}
+                              onClick={() => { setSelectedAllAbilitySide('attacker'); setSelectedAllAbilities(null) }}
+                            >
+                              Attacker
+                            </button>
+                          </div>
+                        )}
                         {activeTab === 'postPlant' && postPlantMapData && (
                           <div className={styles.valPerMapSiteSelector}>
                             {postPlantMapData.bySite.map(s => (
@@ -2495,10 +2558,10 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                                   className={styles.valPlayerPosCheckbox}
                                 />
                                 <span className={styles.valPlayerPosFilterLabel}>
-                                  {c.playerName}{c.extra ? `: ${c.extra}` : ''} @ {c.callout}
+                                  {c.playerName}{c.extra ? `: ${c.extra}` : ''}{c.callout ? ` @ ${c.callout}` : ''}
                                 </span>
                                 <span className={styles.valPlayerPosFilterPercent}>
-                                  {c.count} ({Math.round(c.percentage)}%)
+                                  {c.count}{c.percentage > 0 ? ` (${Math.round(c.percentage)}%)` : ''}
                                 </span>
                               </label>
                             ))}
@@ -2521,7 +2584,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                   if (filteredPlayers.length === 0) return null
                   
                   return (
-                    <div className={styles.valPerMapSubsection}>
+                    <div className={`${styles.valPerMapSubsection} ${styles.valPerMapSubsectionFull}`}>
                       <div className={styles.valPerMapSubsectionHeader}>
                         Lurker Tendencies <span className={styles.valPerMapSampleSize}>({lurkerMapData.totalAttackRounds} attack rounds)</span>
                       </div>

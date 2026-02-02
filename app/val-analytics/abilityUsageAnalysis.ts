@@ -128,12 +128,13 @@ function clusterAbilityPositions(positions: AbilityPosition[], radius: number): 
 
 /**
  * Get ability usages (any time before freeze end + up to 25 seconds after)
- * Only tracks the first usage of each ability type per round
+ * @param limitOnePerRound - If true, only tracks the first usage of each ability type per round (default: true)
  */
 function getAbilityUsages(
   round: ValorantRound,
   playerId: string,
-  agentName: string
+  agentName: string,
+  limitOnePerRound: boolean = true
 ): AbilityPosition[] {
   const abilityUsages = round.abilityUsages || []
   if (abilityUsages.length === 0) return []
@@ -155,7 +156,8 @@ function getAbilityUsages(
     
     // Include abilities used any time before freeze end OR up to 25 seconds after
     if (usageTime <= windowEnd) {
-      if (seenAbilities.has(usage.abilityId)) continue
+      // Only skip duplicates if limitOnePerRound is enabled
+      if (limitOnePerRound && seenAbilities.has(usage.abilityId)) continue
       
       if (usage.position && (usage.position.x !== 0 || usage.position.y !== 0)) {
         seenAbilities.add(usage.abilityId)
@@ -186,12 +188,25 @@ function buildAbilityMapData(
         abilities: AbilityPosition[]
       }
     }
-  }
+  },
+  useAbilityCountForPercentage: boolean = false // If true, percentage is based on total usages of that specific ability type
 ): MapAbilityPositions[] {
   const byMap: MapAbilityPositions[] = []
   
   for (const [mapId, playerData] of Object.entries(abilityByMapPlayer)) {
     const players: PlayerAbilityData[] = []
+    
+    // For offensive abilities, first calculate total usages per ability type across all players
+    // Key: "agentName:abilityId", Value: total count
+    const abilityTypeTotals: { [key: string]: number } = {}
+    if (useAbilityCountForPercentage) {
+      for (const data of Object.values(playerData)) {
+        for (const ability of data.abilities) {
+          const key = `${ability.agentName}:${ability.abilityId}`
+          abilityTypeTotals[key] = (abilityTypeTotals[key] || 0) + 1
+        }
+      }
+    }
     
     for (const [playerId, data] of Object.entries(playerData)) {
       if (data.abilities.length < 2) continue
@@ -202,6 +217,18 @@ function buildAbilityMapData(
         .filter(c => c.positions.length >= 2)
         .map(c => {
           const callout = getClosestCalloutData(mapId, c.centroidX, c.centroidY)
+          
+          // For offensive abilities, percentage is based on total usages of this specific ability type
+          // For defensive abilities, percentage is based on total rounds
+          let percentage: number
+          if (useAbilityCountForPercentage) {
+            const abilityKey = `${c.agentName}:${c.abilityId}`
+            const totalForThisAbility = abilityTypeTotals[abilityKey] || 1
+            percentage = (c.positions.length / totalForThisAbility) * 100
+          } else {
+            percentage = data.totalRounds > 0 ? (c.positions.length / data.totalRounds) * 100 : 0
+          }
+          
           return {
             centroidX: c.centroidX,
             centroidY: c.centroidY,
@@ -210,7 +237,7 @@ function buildAbilityMapData(
             abilityId: c.abilityId,
             agentName: c.agentName,
             count: c.positions.length,
-            percentage: (c.positions.length / data.totalRounds) * 100,
+            percentage,
             positions: c.positions,
           }
         })
@@ -300,7 +327,8 @@ export function analyzeAbilityUsage(
           }
           
           defensiveByMapPlayer[mapId][player.id].totalRounds++
-          const abilities = getAbilityUsages(round, player.id, agentName)
+          // Defender side: limit to 1 ability usage per type per round
+          const abilities = getAbilityUsages(round, player.id, agentName, true)
           defensiveByMapPlayer[mapId][player.id].abilities.push(...abilities)
         } else if (teamSide.side === 'attacker') {
           // Offensive round
@@ -313,7 +341,8 @@ export function analyzeAbilityUsage(
           }
           
           offensiveByMapPlayer[mapId][player.id].totalRounds++
-          const abilities = getAbilityUsages(round, player.id, agentName)
+          // Attacker side: track ALL ability usages (no limit per round)
+          const abilities = getAbilityUsages(round, player.id, agentName, false)
           offensiveByMapPlayer[mapId][player.id].abilities.push(...abilities)
         }
       }
@@ -323,8 +352,8 @@ export function analyzeAbilityUsage(
   return {
     teamId,
     teamName,
-    defensive: buildAbilityMapData(defensiveByMapPlayer),
-    offensive: buildAbilityMapData(offensiveByMapPlayer),
+    defensive: buildAbilityMapData(defensiveByMapPlayer, false), // Percentage based on rounds
+    offensive: buildAbilityMapData(offensiveByMapPlayer, true),  // Percentage based on total ability usages
   }
 }
 

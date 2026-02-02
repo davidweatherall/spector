@@ -141,12 +141,14 @@ export function getMapByName(mapName: string): ValorantMapData | undefined {
  */
 export function getMapAdjustment(mapName: string): MapAdjustment {
   const map = getMapByName(mapName)
+  // Handle rotate being boolean (false) or number
+  const rotateValue = typeof map?.rotate === 'number' ? map.rotate : 0
   return {
     xOffset: map?.xOffset ?? 0,
     yOffset: map?.yOffset ?? 0,
     xScale: map?.xScale ?? 1.0,
     yScale: map?.yScale ?? 1.0,
-    rotate: map?.rotate ?? 0,
+    rotate: rotateValue,
   }
 }
 

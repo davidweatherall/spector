@@ -394,8 +394,10 @@ export function banPhaseAnalysis(series: StreamlinedSeries): AnalyticsResult | n
   
   return {
     name: 'banPhaseAnalysis',
+    description: 'Analyzes ban phase patterns, sequences, and adaptive banning strategies',
     data: {
       teams: results,
     },
+    generatedAt: new Date().toISOString(),
   }
 }

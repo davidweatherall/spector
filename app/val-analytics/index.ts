@@ -13,6 +13,7 @@ import { lurkerAnalysis } from './lurkerAnalysis'
 import { abilityUsageAnalysis } from './abilityUsageAnalysis'
 import { postPlantAnalysis } from './postPlantAnalysis'
 import { postPlantAbilityAnalysis } from './postPlantAbilityAnalysis'
+import { analyzePlayback } from './playbackAnalysis'
 
 /**
  * All Valorant analytics functions to run
@@ -29,6 +30,7 @@ const analyticsFunctions: ValorantAnalyticsFunction[] = [
   abilityUsageAnalysis,
   postPlantAnalysis,
   postPlantAbilityAnalysis,
+  analyzePlayback,
   // Add more Valorant analytics functions here as they are created
 ]
 
@@ -104,4 +106,5 @@ export { analyzeLurkers, runLurkerAnalysis, lurkerAnalysis, type TeamLurkerAnaly
 export { analyzeAbilityUsage, runAbilityUsageAnalysis, abilityUsageAnalysis, type TeamAbilityAnalysis, type MapAbilityPositions, type PlayerAbilityData, type AbilityCluster } from './abilityUsageAnalysis'
 export { analyzePostPlantPositions, runPostPlantAnalysis, postPlantAnalysis, type TeamPostPlantAnalysis, type MapPostPlantPositions, type PlayerPostPlantData, type PostPlantCluster } from './postPlantAnalysis'
 export { analyzePostPlantAbility, runPostPlantAbilityAnalysis, postPlantAbilityAnalysis, type TeamPostPlantAbilityAnalysis, type MapPostPlantAbilityPositions, type PlayerPostPlantAbilityData, type PostPlantAbilityCluster } from './postPlantAbilityAnalysis'
-export { aggregateValorantScoutingReport, type ValorantScoutingReport } from './scoutingReport'
+export { aggregateValorantScoutingReport, type ValorantScoutingReport, type PlaybackRound } from './scoutingReport'
+export { analyzePlayback, type PlaybackAnalysisData, type PlaybackRoundData, type TeamPlaybackAnalysis } from './playbackAnalysis'

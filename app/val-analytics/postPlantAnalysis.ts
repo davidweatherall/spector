@@ -14,7 +14,7 @@ import { ValorantAnalyticsResult } from './types'
 // TYPES
 // ============================================================================
 
-const CLUSTER_RADIUS = 300 // Units to consider positions as "same spot"
+const CLUSTER_RADIUS = 250 // Units to consider positions as "same spot"
 const POST_PLANT_DELAY_MS = 10000 // Track position 10 seconds after plant
 const VALID_PLANT_SITES = ['A', 'B', 'C'] // Only track plants at these sites
 
@@ -85,32 +85,47 @@ interface Cluster {
 }
 
 /**
- * Simple clustering: add position to nearest cluster if within radius,
- * otherwise create new cluster
+ * DBSCAN-style clustering: group positions by density
+ * Fixes centroid drift issue by not updating centroid during assignment
  */
 function clusterPositions(positions: RawPosition[], radius: number): Cluster[] {
+  if (positions.length === 0) return []
+  
+  const visited = new Set<number>()
   const clusters: Cluster[] = []
   
-  for (const pos of positions) {
-    let foundCluster = false
+  for (let i = 0; i < positions.length; i++) {
+    if (visited.has(i)) continue
     
-    for (const cluster of clusters) {
-      if (distance(pos.x, pos.y, cluster.centroidX, cluster.centroidY) <= radius) {
-        cluster.positions.push(pos)
-        // Update centroid
-        const n = cluster.positions.length
-        cluster.centroidX = cluster.positions.reduce((sum, p) => sum + p.x, 0) / n
-        cluster.centroidY = cluster.positions.reduce((sum, p) => sum + p.y, 0) / n
-        foundCluster = true
-        break
+    // Start a new cluster with this position
+    const clusterPositions: RawPosition[] = []
+    const queue = [i]
+    
+    while (queue.length > 0) {
+      const idx = queue.shift()!
+      if (visited.has(idx)) continue
+      visited.add(idx)
+      
+      const pos = positions[idx]
+      clusterPositions.push(pos)
+      
+      // Find all unvisited neighbors within radius
+      for (let j = 0; j < positions.length; j++) {
+        if (!visited.has(j) && distance(pos.x, pos.y, positions[j].x, positions[j].y) <= radius) {
+          queue.push(j)
+        }
       }
     }
     
-    if (!foundCluster) {
+    if (clusterPositions.length > 0) {
+      // Calculate centroid after all positions are assigned
+      const centroidX = clusterPositions.reduce((sum, p) => sum + p.x, 0) / clusterPositions.length
+      const centroidY = clusterPositions.reduce((sum, p) => sum + p.y, 0) / clusterPositions.length
+      
       clusters.push({
-        positions: [pos],
-        centroidX: pos.x,
-        centroidY: pos.y,
+        positions: clusterPositions,
+        centroidX,
+        centroidY,
       })
     }
   }
@@ -331,10 +346,17 @@ export function analyzePostPlantPositions(
         const postPlantClusters: PostPlantCluster[] = clusters
           .filter(c => c.positions.length >= 1)
           .map(c => {
-            const callout = getClosestCalloutData(mapId, c.centroidX, c.centroidY)
+            // Use median for centroid for robustness against outliers
+            const sortedX = c.positions.map(p => p.x).sort((a, b) => a - b)
+            const sortedY = c.positions.map(p => p.y).sort((a, b) => a - b)
+            const midIdx = Math.floor(c.positions.length / 2)
+            const medianX = sortedX[midIdx]
+            const medianY = sortedY[midIdx]
+            
+            const callout = getClosestCalloutData(mapId, medianX, medianY)
             return {
-              centroidX: c.centroidX,
-              centroidY: c.centroidY,
+              centroidX: medianX,
+              centroidY: medianY,
               callout: callout ? `${callout.superRegionName}: ${callout.regionName}` : 'Unknown',
               superRegion: callout?.superRegionName || 'Unknown',
               count: c.positions.length,
@@ -343,7 +365,7 @@ export function analyzePostPlantPositions(
             }
           })
           .sort((a, b) => b.count - a.count)
-          .slice(0, 5) // Top 5 spots per player
+          .slice(0, 10) // Top 10 spots per player (allow multiple common locations)
         
         if (postPlantClusters.length > 0) {
           players.push({

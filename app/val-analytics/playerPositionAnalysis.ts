@@ -13,7 +13,7 @@ import { ValorantAnalyticsResult } from './types'
 // TYPES
 // ============================================================================
 
-const CLUSTER_RADIUS = 300 // Units to consider positions as "same spot"
+const CLUSTER_RADIUS = 250 // Units to consider positions as "same spot"
 
 export interface PositionCluster {
   centroidX: number
@@ -75,32 +75,47 @@ interface Cluster {
 }
 
 /**
- * Simple clustering: add position to nearest cluster if within radius,
- * otherwise create new cluster
+ * DBSCAN-style clustering: group positions by density
+ * Fixes centroid drift issue by not updating centroid during assignment
  */
 function clusterPositions(positions: RawPosition[], radius: number): Cluster[] {
+  if (positions.length === 0) return []
+  
+  const visited = new Set<number>()
   const clusters: Cluster[] = []
   
-  for (const pos of positions) {
-    let foundCluster = false
+  for (let i = 0; i < positions.length; i++) {
+    if (visited.has(i)) continue
     
-    for (const cluster of clusters) {
-      if (distance(pos.x, pos.y, cluster.centroidX, cluster.centroidY) <= radius) {
-        cluster.positions.push(pos)
-        // Update centroid
-        const n = cluster.positions.length
-        cluster.centroidX = cluster.positions.reduce((sum, p) => sum + p.x, 0) / n
-        cluster.centroidY = cluster.positions.reduce((sum, p) => sum + p.y, 0) / n
-        foundCluster = true
-        break
+    // Start a new cluster with this position
+    const clusterPositions: RawPosition[] = []
+    const queue = [i]
+    
+    while (queue.length > 0) {
+      const idx = queue.shift()!
+      if (visited.has(idx)) continue
+      visited.add(idx)
+      
+      const pos = positions[idx]
+      clusterPositions.push(pos)
+      
+      // Find all unvisited neighbors within radius
+      for (let j = 0; j < positions.length; j++) {
+        if (!visited.has(j) && distance(pos.x, pos.y, positions[j].x, positions[j].y) <= radius) {
+          queue.push(j)
+        }
       }
     }
     
-    if (!foundCluster) {
+    if (clusterPositions.length > 0) {
+      // Calculate centroid after all positions are assigned
+      const centroidX = clusterPositions.reduce((sum, p) => sum + p.x, 0) / clusterPositions.length
+      const centroidY = clusterPositions.reduce((sum, p) => sum + p.y, 0) / clusterPositions.length
+      
       clusters.push({
-        positions: [pos],
-        centroidX: pos.x,
-        centroidY: pos.y,
+        positions: clusterPositions,
+        centroidX,
+        centroidY,
       })
     }
   }
@@ -198,43 +213,33 @@ export function analyzePlayerPositions(
     }
   }
   
-  // Build output with clustering
+  // Build output - pass raw positions, clustering happens in aggregation
   const byMap: MapPlayerPositions[] = []
   
   for (const [mapId, playerData] of Object.entries(positionsByMapPlayer)) {
     const players: PlayerPositionData[] = []
     
     for (const [playerId, data] of Object.entries(playerData)) {
-      if (data.positions.length < 2) continue // Need at least 2 positions
+      if (data.positions.length < 1) continue // Need at least 1 position
       
-      const clusters = clusterPositions(data.positions, CLUSTER_RADIUS)
-      
-      // Convert clusters to output format
-      const positionClusters: PositionCluster[] = clusters
-        .filter(c => c.positions.length >= 2) // Only clusters with 2+ occurrences
-        .map(c => {
-          const callout = getClosestCalloutData(mapId, c.centroidX, c.centroidY)
-          return {
-            centroidX: c.centroidX,
-            centroidY: c.centroidY,
-            callout: callout ? `${callout.superRegionName}: ${callout.regionName}` : 'Unknown',
-            superRegion: callout?.superRegionName || 'Unknown',
-            count: c.positions.length,
-            percentage: (c.positions.length / data.positions.length) * 100,
-            positions: c.positions.map(p => ({ x: p.x, y: p.y })), // Store individual positions
-          }
-        })
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5) // Top 5 spots per player
-      
-      if (positionClusters.length > 0) {
-        players.push({
-          playerId,
-          playerName: data.playerName,
-          totalRounds: data.positions.length,
-          clusters: positionClusters,
-        })
+      // Pass all raw positions as a single "cluster" - real clustering happens in aggregation
+      // This ensures positions from multiple series can be clustered together
+      const rawCluster: PositionCluster = {
+        centroidX: 0, // Will be recalculated in aggregation
+        centroidY: 0,
+        callout: 'Raw',
+        superRegion: 'Raw',
+        count: data.positions.length,
+        percentage: 100,
+        positions: data.positions.map(p => ({ x: p.x, y: p.y })),
       }
+      
+      players.push({
+        playerId,
+        playerName: data.playerName,
+        totalRounds: data.positions.length,
+        clusters: [rawCluster], // Single cluster with all raw positions
+      })
     }
     
     // Sort players by name

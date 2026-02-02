@@ -142,6 +142,8 @@ export function draftAnalysis(series: StreamlinedSeries): AnalyticsResult | null
   
   return {
     name: 'draftAnalysis',
+    description: 'Analyzes the draft phase including bans and picks for all games in the series',
     data: result,
+    generatedAt: new Date().toISOString(),
   }
 }

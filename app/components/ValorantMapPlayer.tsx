@@ -46,6 +46,10 @@ interface StaticPosition {
   y: number
   percentage?: number // Optional percentage to display
   tooltip?: string // Optional custom tooltip
+  color?: string // Optional custom color for the dot
+  agentId?: string // Optional agent ID for agent image display
+  side?: 'attacker' | 'defender' // Optional side for coloring
+  isDead?: boolean // Optional dead state for opacity
 }
 
 interface ValorantMapPlayerPropsPlayback {
@@ -65,6 +69,8 @@ interface ValorantMapPlayerPropsStatic {
   staticPositions: StaticPosition[]
   mapSize?: number // Optional map size (default 400)
   dotSize?: 'normal' | 'small' // Dot size (default normal)
+  roundIndicator?: string // Optional round indicator (e.g. "R15")
+  gameClock?: string // Optional game clock display (e.g. "1:23")
 }
 
 type ValorantMapPlayerProps = ValorantMapPlayerPropsPlayback | ValorantMapPlayerPropsStatic
@@ -530,11 +536,19 @@ export default function ValorantMapPlayer(props: ValorantMapPlayerProps) {
 }
 
 // Static mode component - shows fixed positions without playback
-function ValorantMapPlayerStatic({ mapName, staticPositions, mapSize = 400, dotSize = 'normal' }: ValorantMapPlayerPropsStatic) {
+function ValorantMapPlayerStatic({ mapName, staticPositions, mapSize = 400, dotSize = 'normal', roundIndicator, gameClock }: ValorantMapPlayerPropsStatic) {
   // Get map configs from the valorantMapData utility
   const calloutConfig = useMemo(() => getMapCoordinateConfigFromBounds(mapName), [mapName])
   const mapAdjustment = useMemo(() => getMapAdjustment(mapName), [mapName])
   const mapImagePath = `/val-map/${mapName.toLowerCase()}.png`
+  
+  // Track actual image dimensions for proper positioning
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null)
+  
+  // Reset image dimensions when map changes to force recalculation
+  useEffect(() => {
+    setImageDimensions(null)
+  }, [mapName])
 
   // Convert using callout-based multipliers (same as playback mode default)
   const convertToPercent = useCallback((x: number, y: number): { xPercent: number; yPercent: number } => {
@@ -555,14 +569,41 @@ function ValorantMapPlayerStatic({ mapName, staticPositions, mapSize = 400, dotS
       yPercent: centerY + (result.yPercent - centerY) * mapAdjustment.yScale + mapAdjustment.yOffset,
     }
   }, [calloutConfig, mapAdjustment])
+  
+  // Calculate container dimensions based on image aspect ratio
+  const containerStyle = useMemo(() => {
+    if (!imageDimensions) {
+      // Default to square while loading
+      return { width: mapSize, height: mapSize }
+    }
+    const aspectRatio = imageDimensions.width / imageDimensions.height
+    if (aspectRatio >= 1) {
+      // Wider than tall
+      return { width: mapSize, height: mapSize / aspectRatio }
+    } else {
+      // Taller than wide
+      return { width: mapSize * aspectRatio, height: mapSize }
+    }
+  }, [imageDimensions, mapSize])
 
   return (
-    <div className={styles.staticContainer} style={{ width: mapSize }}>
+    <div className={styles.staticContainer} style={{ width: containerStyle.width, position: 'relative' }}>
+      {/* Playback overlays */}
+      {roundIndicator && (
+        <div className={styles.playbackRoundIndicator}>
+          {roundIndicator}
+        </div>
+      )}
+      {gameClock && (
+        <div className={styles.playbackGameClock}>
+          {gameClock}
+        </div>
+      )}
       <div 
-        className={styles.mapContainer}
+        className={styles.mapContainerStatic}
         style={{
-          width: mapSize,
-          height: mapSize,
+          width: containerStyle.width,
+          height: containerStyle.height,
           transform: mapAdjustment.rotate !== 0
             ? `rotate(${mapAdjustment.rotate}deg) rotateY(180deg)` 
             : 'rotateY(180deg)'
@@ -571,15 +612,51 @@ function ValorantMapPlayerStatic({ mapName, staticPositions, mapSize = 400, dotS
         <Image
           src={mapImagePath}
           alt={mapName}
-          width={mapSize}
-          height={mapSize}
-          className={styles.mapImage}
+          width={containerStyle.width}
+          height={containerStyle.height}
+          className={styles.mapImageStatic}
           priority
+          onLoad={(e) => {
+            const img = e.currentTarget
+            if (img.naturalWidth && img.naturalHeight) {
+              setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight })
+            }
+          }}
         />
         
         {/* Static Position Dots */}
         {staticPositions.map((pos) => {
           const { xPercent, yPercent } = convertToPercent(pos.x, pos.y)
+          const agentImagePath = pos.agentId 
+            ? `/agents/${pos.agentId.toLowerCase()}.png`
+            : null
+          
+          // If we have an agent ID, render like playback mode with agent images
+          if (agentImagePath && pos.side) {
+            return (
+              <div
+                key={pos.id}
+                className={`${styles.playerIcon} ${styles[pos.side === 'attacker' ? 'team2' : 'team1']}`}
+                style={{
+                  left: `${xPercent}%`,
+                  top: `${yPercent}%`,
+                  opacity: pos.isDead ? 0.5 : 1,
+                }}
+                title={pos.tooltip || pos.label}
+              >
+                <Image
+                  src={agentImagePath}
+                  alt={pos.agentId || pos.label}
+                  width={24}
+                  height={24}
+                  className={styles.agentImage}
+                  style={mapAdjustment.rotate !== 0 ? { transform: `rotate(${mapAdjustment.rotate}deg)` } : undefined}
+                />
+              </div>
+            )
+          }
+          
+          // Default dot rendering
           const dotClass = dotSize === 'small' ? styles.staticDotSmall : styles.staticDot
           
           return (
@@ -589,6 +666,10 @@ function ValorantMapPlayerStatic({ mapName, staticPositions, mapSize = 400, dotS
               style={{
                 left: `${xPercent}%`,
                 top: `${yPercent}%`,
+                ...(pos.color ? { 
+                  background: pos.color,
+                  boxShadow: `0 2px 8px rgba(0, 0, 0, 0.5), 0 0 8px ${pos.color}80`
+                } : {}),
               }}
               title={pos.tooltip || `${pos.label}${pos.percentage ? ` (${Math.round(pos.percentage)}%)` : ''}`}
             >

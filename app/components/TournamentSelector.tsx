@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -265,6 +265,46 @@ interface ValorantScoutingReport {
       }[]
     }[]
   }[]
+  playbackData: {
+    byMap: {
+      mapId: string
+      mapName: string
+      attacker: PlaybackRound[]
+      defender: PlaybackRound[]
+    }[]
+  } | null
+}
+
+interface PlaybackRound {
+  roundId: string
+  seriesId: string
+  gameNumber: number
+  roundNumber: number
+  opponent: string
+  date: string
+  ourSide: 'attacker' | 'defender'
+  isWin: boolean
+  players: {
+    playerId: string
+    playerName: string
+    teamId: string
+    teamName: string
+    agentId: string
+    side: 'attacker' | 'defender'
+  }[]
+  coordinateTracking: {
+    time: number
+    playerCoordinates: { playerId: string; x: number; y: number }[]
+  }[]
+  kills: {
+    killerId: string
+    victimId: string
+    occurredAt: string
+  }[]
+  freezetimeEndedAt: string | null
+  roundStartTime: number
+  roundEndTime: number
+  bombPlantTime: number | null
 }
 
 export default function TournamentSelector({ game }: TournamentSelectorProps) {
@@ -289,9 +329,40 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
   const [selectedPostPlantMap, setSelectedPostPlantMap] = useState<string | null>(null)
   const [selectedPostPlantSite, setSelectedPostPlantSite] = useState<string | null>(null)
   const [selectedPostPlantPositions, setSelectedPostPlantPositions] = useState<Set<string> | null>(null)
-  const [selectedMapAnalysisTab, setSelectedMapAnalysisTab] = useState<'positions' | 'allAbilities' | 'defAbility' | 'offAbility' | 'postPlant'>('positions')
+  const [selectedMapAnalysisTab, setSelectedMapAnalysisTab] = useState<'positions' | 'allAbilities' | 'defAbility' | 'offAbility' | 'postPlant' | 'playback'>('offAbility')
   const [selectedAllAbilitySide, setSelectedAllAbilitySide] = useState<'defender' | 'attacker'>('defender')
   const [selectedAllAbilities, setSelectedAllAbilities] = useState<Set<string> | null>(null)
+  const [selectedLeftSetupTab, setSelectedLeftSetupTab] = useState<'defensive' | 'offensive' | 'economy'>('defensive')
+  // Playback state
+  const [selectedPlaybackSide, setSelectedPlaybackSide] = useState<'attacker' | 'defender'>('attacker')
+  const [isPlaybackPlaying, setIsPlaybackPlaying] = useState(false)
+  const [playbackTime, setPlaybackTime] = useState(0) // Current playback time in ms (relative to round start)
+  const [currentPlaybackRoundIdx, setCurrentPlaybackRoundIdx] = useState(0) // Which round we're playing
+  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastTickTimeRef = useRef<number>(0)
+  const PLAYBACK_SPEED = 20 // 20x speed
+  const TICK_INTERVAL_MS = 16 // ~60fps
+  
+  // Clean up playback interval on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackIntervalRef.current) {
+        clearInterval(playbackIntervalRef.current)
+      }
+    }
+  }, [])
+  
+  // Stop playback when map or tab changes
+  useEffect(() => {
+    setIsPlaybackPlaying(false)
+    setPlaybackTime(0)
+    setCurrentPlaybackRoundIdx(0)
+    if (playbackIntervalRef.current) {
+      clearInterval(playbackIntervalRef.current)
+      playbackIntervalRef.current = null
+    }
+  }, [selectedPerMapTab, selectedMapAnalysisTab])
+  
   const [customGameCount, setCustomGameCount] = useState<string>('10')
   const [selectedGoldLeadRole, setSelectedGoldLeadRole] = useState<'top' | 'jungle' | 'mid' | 'bot' | 'support'>('mid')
   const [selectedCounterPickTab, setSelectedCounterPickTab] = useState<'top-cp' | 'top-cpd' | 'mid-cp' | 'mid-cpd'>('mid-cp')
@@ -1386,7 +1457,8 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                             borderRadius: '6px',
                             color: 'var(--text-primary)'
                           }}
-                          formatter={(value: number, name: string) => {
+                          formatter={(value, name) => {
+                            if (typeof value !== 'number') return [value, name]
                             if (name === 'gold') return [`${value >= 0 ? '+' : ''}${value.toLocaleString()}`, 'Gold Lead']
                             return [value, name]
                           }}
@@ -1656,7 +1728,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                             borderRadius: '6px',
                             color: 'var(--text-primary)'
                           }}
-                          formatter={(value: number, name: string) => {
+                          formatter={(value, name) => {
                             if (name === 'cumulativeGames') return [value, 'Total Games']
                             return [value, name]
                           }}
@@ -1778,7 +1850,10 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                                 borderRadius: '6px',
                                 color: 'var(--text-primary)'
                               }}
-                              formatter={(value: number) => [`${value >= 0 ? '+' : ''}${value.toLocaleString()}`, 'Gold Diff']}
+                              formatter={(value) => {
+                                if (typeof value !== 'number') return [value, 'Gold Diff']
+                                return [`${value >= 0 ? '+' : ''}${value.toLocaleString()}`, 'Gold Diff']
+                              }}
                               labelFormatter={(value) => `Game ${value}`}
                             />
                             <ReferenceLine 
@@ -2045,13 +2120,13 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
             const defAbilityMapData = valScoutingReport.abilityUsage?.defensive.find(m => m.mapId === currentMapId)
             const offAbilityMapData = valScoutingReport.abilityUsage?.offensive.find(m => m.mapId === currentMapId)
             const postPlantMapData = valScoutingReport.postPlant?.byMap.find(m => m.mapId === currentMapId)
+            const playbackMapData = valScoutingReport.playbackData?.byMap.find(m => m.mapId === currentMapId)
             
             return (
               <div className={styles.valPerMapSection}>
                 {/* Header with Map Selector */}
                 <div className={styles.valPerMapHeader}>
                   <div className={styles.valPerMapTitle}>
-                    <span className={styles.valPerMapTitleIcon}>📍</span>
                     Per Map Stats
                   </div>
                   <div className={styles.valPerMapSelector}>
@@ -2076,280 +2151,229 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                   </div>
                 </div>
                 
-                {/* Grid of subsections */}
-                <div className={styles.valPerMapGrid}>
-                  {/* Agent Picks for this Map */}
-                  {agentPicksMapData && (
-                    <div className={`${styles.valPerMapSubsection} ${styles.valPerMapSubsectionFull}`}>
-                      <div className={styles.valPerMapSubsectionHeader}>
-                        Agent Picks <span className={styles.valPerMapSampleSize}>({agentPicksMapData.gamesPlayed} games)</span>
-                      </div>
-                      <div className={styles.valAgentGrid}>
-                        {agentPicksMapData.agentPicks.slice(0, 10).map((agent) => (
-                          <div key={agent.agentId} className={styles.valAgentCard}>
-                            <Image
-                              src={getAgentImagePath(agent.agentName)}
-                              alt={agent.agentName}
-                              width={36}
-                              height={36}
-                              className={styles.valAgentImage}
-                              unoptimized
-                            />
-                            <div className={styles.valAgentInfo}>
-                              <span className={styles.valAgentName}>{agent.agentName}</span>
-                              <span className={styles.valAgentStats}>
-                                {Math.round(agent.percentage)}% pick · {Math.round(agent.winPercentage)}% win
-                              </span>
+                {/* 3-Column Map Scouting Layout */}
+                <div className={styles.valMapScoutingLayout}>
+                  {/* LEFT SIDEBAR */}
+                  <div className={styles.valMapLeftSidebar}>
+                    {/* Agent Picks */}
+                    {agentPicksMapData && (
+                      <div className={styles.valLeftAgentPicks}>
+                        <div className={styles.valLeftAgentPicksHeader}>Agent Picks</div>
+                        <div className={styles.valLeftAgentPicksTableHeader}>
+                          <span>Agent</span>
+                          <span>Pick</span>
+                          <span>Win</span>
+                        </div>
+                        <div className={styles.valLeftAgentPicksTable}>
+                          {agentPicksMapData.agentPicks.slice(0, 8).map((agent) => (
+                            <div key={agent.agentId} className={styles.valLeftAgentRow}>
+                              <div className={styles.valLeftAgentInfo}>
+                                <Image
+                                  src={getAgentImagePath(agent.agentName)}
+                                  alt={agent.agentName}
+                                  width={28}
+                                  height={28}
+                                  className={styles.valLeftAgentImg}
+                                  unoptimized
+                                />
+                                <span className={styles.valLeftAgentName}>{agent.agentName}</span>
+                              </div>
+                              <span className={styles.valLeftAgentPick}>{Math.round(agent.percentage)}%</span>
+                              <span className={styles.valLeftAgentWin}>{Math.round(agent.winPercentage)}%</span>
                             </div>
-                            <div className={styles.valAgentBarContainer}>
-                              <div 
-                                className={styles.valAgentBar}
-                                style={{ width: `${agent.percentage}%` }}
-                              />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Setup Tabs Section */}
+                    <div className={styles.valLeftSetupSection}>
+                      <div className={styles.valLeftSetupTabs}>
+                        <button
+                          className={`${styles.valLeftSetupTab} ${selectedLeftSetupTab === 'defensive' ? styles.valLeftSetupTabActive : ''}`}
+                          onClick={() => setSelectedLeftSetupTab('defensive')}
+                        >
+                          Defensive
+                        </button>
+                        <button
+                          className={`${styles.valLeftSetupTab} ${selectedLeftSetupTab === 'offensive' ? styles.valLeftSetupTabActive : ''}`}
+                          onClick={() => setSelectedLeftSetupTab('offensive')}
+                        >
+                          Offensive
+                        </button>
+                        <button
+                          className={`${styles.valLeftSetupTab} ${selectedLeftSetupTab === 'economy' ? styles.valLeftSetupTabActive : ''}`}
+                          onClick={() => setSelectedLeftSetupTab('economy')}
+                        >
+                          Economy
+                        </button>
+                      </div>
+                      <div className={styles.valLeftSetupContent}>
+                        {selectedLeftSetupTab === 'defensive' && defensiveMapData && (
+                          <>
+                            <div className={styles.valPerMapSampleSize} style={{ marginBottom: '0.5rem' }}>
+                              {defensiveMapData.totalRounds} rounds
                             </div>
-                          </div>
-                        ))}
+                            {defensiveMapData.formations.slice(0, 6).map((formation, idx) => (
+                              <div key={idx} className={styles.valLeftFormationRow}>
+                                <div className={styles.valLeftFormationChips}>
+                                  {Object.entries(formation.superRegions)
+                                    .sort((a, b) => a[0].localeCompare(b[0]))
+                                    .map(([region, count]) => (
+                                      <span key={region} className={styles.valLeftFormationChip}>
+                                        {count}{shortenRegionName(region)}
+                                      </span>
+                                    ))}
+                                </div>
+                                <span className={styles.valLeftFormationPercent}>{Math.round(formation.percentage)}%</span>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        {selectedLeftSetupTab === 'offensive' && offensiveMapData && (
+                          <>
+                            <div className={styles.valPerMapSampleSize} style={{ marginBottom: '0.5rem' }}>
+                              {offensiveMapData.totalRounds} rounds
+                            </div>
+                            {offensiveMapData.formations.slice(0, 6).map((formation, idx) => (
+                              <div key={idx} className={styles.valLeftFormationRow}>
+                                <div className={styles.valLeftFormationChips}>
+                                  {Object.entries(formation.superRegions)
+                                    .sort((a, b) => a[0].localeCompare(b[0]))
+                                    .map(([region, count]) => (
+                                      <span key={region} className={styles.valLeftFormationChip}>
+                                        {count}{shortenRegionName(region)}
+                                      </span>
+                                    ))}
+                                </div>
+                                <span className={styles.valLeftFormationPercent}>{Math.round(formation.percentage)}%</span>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        {selectedLeftSetupTab === 'economy' && (
+                          <>
+                            {economyDefEcoMapData && (
+                              <div style={{ marginBottom: '0.75rem' }}>
+                                <div className={styles.valPerMapSampleSize} style={{ marginBottom: '0.25rem' }}>
+                                  Def Eco ({economyDefEcoMapData.totalRounds} rounds)
+                                </div>
+                                {economyDefEcoMapData.formations.slice(0, 3).map((formation, idx) => (
+                                  <div key={idx} className={styles.valLeftFormationRow}>
+                                    <div className={styles.valLeftFormationChips}>
+                                      {Object.entries(formation.superRegions)
+                                        .sort((a, b) => a[0].localeCompare(b[0]))
+                                        .map(([region, count]) => (
+                                          <span key={region} className={styles.valLeftFormationChip}>
+                                            {count}{shortenRegionName(region)}
+                                          </span>
+                                        ))}
+                                    </div>
+                                    <span className={styles.valLeftFormationPercent}>{Math.round(formation.percentage)}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {economyOffEcoMapData && (
+                              <div>
+                                <div className={styles.valPerMapSampleSize} style={{ marginBottom: '0.25rem' }}>
+                                  Off Eco ({economyOffEcoMapData.totalRounds} rounds)
+                                </div>
+                                {economyOffEcoMapData.formations.slice(0, 3).map((formation, idx) => (
+                                  <div key={idx} className={styles.valLeftFormationRow}>
+                                    <div className={styles.valLeftFormationChips}>
+                                      {Object.entries(formation.superRegions)
+                                        .sort((a, b) => a[0].localeCompare(b[0]))
+                                        .map(([region, count]) => (
+                                          <span key={region} className={styles.valLeftFormationChip}>
+                                            {count}{shortenRegionName(region)}
+                                          </span>
+                                        ))}
+                                    </div>
+                                    <span className={styles.valLeftFormationPercent}>{Math.round(formation.percentage)}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
-                  )}
-                
-                {/* Defensive Setups for this Map */}
-                {defensiveMapData && (
-                  <div className={styles.valPerMapSubsection}>
-                    <div className={styles.valPerMapSubsectionHeader}>
-                      Defensive Setups <span className={styles.valPerMapSampleSize}>({defensiveMapData.totalRounds} rounds)</span>
-                    </div>
-                    <div className={styles.valDefenseFormations}>
-                      {defensiveMapData.formations.slice(0, 5).map((formation, idx) => (
-                        <div key={idx} className={styles.valDefenseFormationRow}>
-                          <div className={styles.valDefenseFormationChips}>
-                            {Object.entries(formation.superRegions)
-                              .sort((a, b) => a[0].localeCompare(b[0]))
-                              .map(([region, count]) => (
-                                <span 
-                                  key={region} 
-                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                >
-                                  {count}{shortenRegionName(region)}
-                                </span>
-                              ))}
-                          </div>
-                          <div className={styles.valDefenseFormationBar}>
-                            <div 
-                              className={styles.valDefenseFormationBarFill} 
-                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                            />
-                          </div>
-                          <span className={styles.valDefenseFormationPercent}>{Math.round(formation.percentage)}%</span>
-                        </div>
-                      ))}
-                    </div>
                   </div>
-                )}
-                
-                {/* Offensive Executes for this Map */}
-                {offensiveMapData && (
-                  <div className={styles.valPerMapSubsection}>
-                    <div className={styles.valPerMapSubsectionHeader}>
-                      Offensive Executes <span className={styles.valPerMapSampleSize}>({offensiveMapData.totalRounds} rounds)</span>
-                    </div>
-                    <div className={styles.valDefenseFormations}>
-                      {offensiveMapData.formations.slice(0, 5).map((formation, idx) => (
-                        <div key={idx} className={styles.valDefenseFormationRow}>
-                          <div className={styles.valDefenseFormationChips}>
-                            {Object.entries(formation.superRegions)
-                              .sort((a, b) => a[0].localeCompare(b[0]))
-                              .map(([region, count]) => (
-                                <span 
-                                  key={region} 
-                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                >
-                                  {count}{shortenRegionName(region)}
-                                </span>
-                              ))}
-                          </div>
-                          <div className={styles.valDefenseFormationBar}>
-                            <div 
-                              className={styles.valOffenseFormationBarFill} 
-                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                            />
-                          </div>
-                          <span className={styles.valOffenseFormationPercent}>{Math.round(formation.percentage)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Economy: Defensive Buy Rounds */}
-                {economyDefBuyMapData && (
-                  <div className={styles.valPerMapSubsection}>
-                    <div className={styles.valPerMapSubsectionHeader}>
-                      Defensive - Buy Rounds <span className={styles.valPerMapSampleSize}>({economyDefBuyMapData.totalRounds} rounds)</span>
-                    </div>
-                    <div className={styles.valDefenseFormations}>
-                      {economyDefBuyMapData.formations.slice(0, 4).map((formation, idx) => (
-                        <div key={idx} className={styles.valDefenseFormationRow}>
-                          <div className={styles.valDefenseFormationChips}>
-                            {Object.entries(formation.superRegions)
-                              .sort((a, b) => a[0].localeCompare(b[0]))
-                              .map(([region, count]) => (
-                                <span 
-                                  key={region} 
-                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                >
-                                  {count}{shortenRegionName(region)}
-                                </span>
-                              ))}
-                          </div>
-                          <div className={styles.valDefenseFormationBar}>
-                            <div 
-                              className={styles.valBuyFormationBarFill} 
-                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                            />
-                          </div>
-                          <span className={styles.valBuyFormationPercent}>{Math.round(formation.percentage)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Economy: Defensive Eco Rounds */}
-                {economyDefEcoMapData && (
-                  <div className={styles.valPerMapSubsection}>
-                    <div className={styles.valPerMapSubsectionHeader}>
-                      Defensive - Eco Rounds <span className={styles.valPerMapSampleSize}>({economyDefEcoMapData.totalRounds} rounds)</span>
-                    </div>
-                    <div className={styles.valDefenseFormations}>
-                      {economyDefEcoMapData.formations.slice(0, 4).map((formation, idx) => (
-                        <div key={idx} className={styles.valDefenseFormationRow}>
-                          <div className={styles.valDefenseFormationChips}>
-                            {Object.entries(formation.superRegions)
-                              .sort((a, b) => a[0].localeCompare(b[0]))
-                              .map(([region, count]) => (
-                                <span 
-                                  key={region} 
-                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                >
-                                  {count}{shortenRegionName(region)}
-                                </span>
-                              ))}
-                          </div>
-                          <div className={styles.valDefenseFormationBar}>
-                            <div 
-                              className={styles.valEcoFormationBarFill} 
-                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                            />
-                          </div>
-                          <span className={styles.valEcoFormationPercent}>{Math.round(formation.percentage)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Economy: Offensive Buy Rounds */}
-                {economyOffBuyMapData && (
-                  <div className={styles.valPerMapSubsection}>
-                    <div className={styles.valPerMapSubsectionHeader}>
-                      Offensive - Buy Rounds <span className={styles.valPerMapSampleSize}>({economyOffBuyMapData.totalRounds} rounds)</span>
-                    </div>
-                    <div className={styles.valDefenseFormations}>
-                      {economyOffBuyMapData.formations.slice(0, 4).map((formation, idx) => (
-                        <div key={idx} className={styles.valDefenseFormationRow}>
-                          <div className={styles.valDefenseFormationChips}>
-                            {Object.entries(formation.superRegions)
-                              .sort((a, b) => a[0].localeCompare(b[0]))
-                              .map(([region, count]) => (
-                                <span 
-                                  key={region} 
-                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                >
-                                  {count}{shortenRegionName(region)}
-                                </span>
-                              ))}
-                          </div>
-                          <div className={styles.valDefenseFormationBar}>
-                            <div 
-                              className={styles.valBuyFormationBarFill} 
-                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                            />
-                          </div>
-                          <span className={styles.valBuyFormationPercent}>{Math.round(formation.percentage)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Economy: Offensive Eco Rounds */}
-                {economyOffEcoMapData && (
-                  <div className={styles.valPerMapSubsection}>
-                    <div className={styles.valPerMapSubsectionHeader}>
-                      Offensive - Eco Rounds <span className={styles.valPerMapSampleSize}>({economyOffEcoMapData.totalRounds} rounds)</span>
-                    </div>
-                    <div className={styles.valDefenseFormations}>
-                      {economyOffEcoMapData.formations.slice(0, 4).map((formation, idx) => (
-                        <div key={idx} className={styles.valDefenseFormationRow}>
-                          <div className={styles.valDefenseFormationChips}>
-                            {Object.entries(formation.superRegions)
-                              .sort((a, b) => a[0].localeCompare(b[0]))
-                              .map(([region, count]) => (
-                                <span 
-                                  key={region} 
-                                  className={`${styles.valDefenseSiteChip} ${styles[`valDefenseSite${region.replace(/\s+/g, '')}`] || styles.valDefenseSiteDefault}`}
-                                >
-                                  {count}{shortenRegionName(region)}
-                                </span>
-                              ))}
-                          </div>
-                          <div className={styles.valDefenseFormationBar}>
-                            <div 
-                              className={styles.valEcoFormationBarFill} 
-                              style={{ width: `${Math.min(formation.percentage, 100)}%` }}
-                            />
-                          </div>
-                          <span className={styles.valEcoFormationPercent}>{Math.round(formation.percentage)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Unified Map Analysis Section */}
-                {(playerPositionsMapData || defAbilityMapData || offAbilityMapData || postPlantMapData) && (() => {
-                  // Determine available tabs
-                  type TabId = 'positions' | 'allAbilities' | 'defAbility' | 'offAbility' | 'postPlant'
-                  const allTabs: { id: TabId; label: string; available: boolean }[] = [
-                    { id: 'positions', label: 'Common Defender Locations', available: !!playerPositionsMapData },
-                    { id: 'allAbilities', label: 'All Abilities', available: !!(defAbilityMapData || offAbilityMapData) },
-                    { id: 'defAbility', label: 'Defender Abilities', available: !!defAbilityMapData },
-                    { id: 'offAbility', label: 'Attacker Abilities', available: !!offAbilityMapData },
-                    { id: 'postPlant', label: 'Post-Plant', available: !!postPlantMapData },
-                  ]
-                  const tabs = allTabs.filter(t => t.available)
                   
-                  if (tabs.length === 0) return null
-                  
-                  // Default to first available tab if current isn't available
-                  const activeTab = tabs.find(t => t.id === selectedMapAnalysisTab)?.id || tabs[0].id
-                  
-                  // Build clusters and positions based on active tab
-                  let allClusters: { id: string; playerName: string; callout: string; percentage: number; positions: { x: number; y: number }[]; count: number; extra?: string }[] = []
-                  let effectiveSelection: Set<string> = new Set()
-                  let setSelection: (s: Set<string> | null) => void = () => {}
-                  let selectedSet: Set<string> | null = null
-                  let subtitle = ''
-                  
-                  // Filter out placeholder players like "Player 1", "Player 2", etc.
-                  const isRealPlayer = (name: string) => !/^Player \d+$/i.test(name)
-                  
-                  if (activeTab === 'positions' && playerPositionsMapData) {
-                    allClusters = playerPositionsMapData.players
-                      .filter(player => isRealPlayer(player.playerName))
-                      .flatMap(player =>
-                        player.clusters.filter(c => c.percentage >= 20).map((c, idx) => ({
+                  {/* CENTER MAP & RIGHT SIDEBAR */}
+                  {(() => {
+                    type TabId = 'positions' | 'allAbilities' | 'defAbility' | 'offAbility' | 'postPlant' | 'playback'
+                    const abilityTabs: { id: TabId; label: string; available: boolean }[] = [
+                      { id: 'offAbility', label: 'Attacker', available: !!offAbilityMapData },
+                      { id: 'defAbility', label: 'Defender', available: !!defAbilityMapData },
+                    ]
+                    const locationTabs: { id: TabId; label: string; available: boolean }[] = [
+                      { id: 'postPlant', label: 'Post Plant', available: !!postPlantMapData },
+                      { id: 'positions', label: 'Defender', available: !!playerPositionsMapData },
+                    ]
+                    const playbackTabs: { id: TabId; label: string; available: boolean }[] = [
+                      { id: 'playback', label: 'Playback', available: !!(playbackMapData && (playbackMapData.attacker.length > 0 || playbackMapData.defender.length > 0)) },
+                    ]
+                    const allTabs = [...abilityTabs, ...locationTabs, ...playbackTabs]
+                    const tabs = allTabs.filter(t => t.available)
+                    
+                    if (tabs.length === 0) {
+                      return (
+                        <>
+                          <div className={styles.valMapCenter}>
+                            <ValorantMapPlayer
+                              mode="static"
+                              mapName={currentMapId}
+                              staticPositions={[]}
+                              mapSize={550}
+                              dotSize="small"
+                            />
+                          </div>
+                          <div className={styles.valMapRightSidebar} />
+                        </>
+                      )
+                    }
+                    
+                    const activeTab = tabs.find(t => t.id === selectedMapAnalysisTab)?.id || tabs[0].id
+                    
+                    // 20 distinct colors for different abilities/players
+                    const CLUSTER_COLORS = [
+                      '#ec4899', // pink
+                      '#8b5cf6', // violet
+                      '#3b82f6', // blue
+                      '#06b6d4', // cyan
+                      '#10b981', // emerald
+                      '#84cc16', // lime
+                      '#eab308', // yellow
+                      '#f97316', // orange
+                      '#ef4444', // red
+                      '#f43f5e', // rose
+                      '#a855f7', // purple
+                      '#6366f1', // indigo
+                      '#0ea5e9', // sky
+                      '#14b8a6', // teal
+                      '#22c55e', // green
+                      '#a3e635', // lime bright
+                      '#fbbf24', // amber
+                      '#fb923c', // orange light
+                      '#f87171', // red light
+                      '#c084fc', // purple light
+                    ]
+                    
+                    let allClusters: { id: string; playerName: string; callout: string; percentage: number; positions: { x: number; y: number }[]; count: number; extra?: string }[] = []
+                    let effectiveSelection: Set<string> = new Set()
+                    let setSelection: (s: Set<string> | null) => void = () => {}
+                    let selectedSet: Set<string> | null = null
+                    
+                    const isRealPlayer = (name: string) => !/^Player \d+$/i.test(name)
+                    
+                    if (activeTab === 'positions' && playerPositionsMapData) {
+                      const filteredPlayers = playerPositionsMapData.players.filter(player => isRealPlayer(player.playerName))
+                      
+                      // Create individual cluster entries
+                      const individualClusters = filteredPlayers.flatMap(player =>
+                        player.clusters.filter(c => c.percentage >= 15 && c.count >= 2).map((c, idx) => ({
                           id: `${player.playerId}-${idx}`,
                           playerName: player.playerName,
                           callout: c.callout,
@@ -2357,91 +2381,68 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                           positions: c.positions || [],
                           count: c.count,
                         }))
-                      ).sort((a, b) => b.percentage - a.percentage)
-                    selectedSet = selectedPlayerPositions
-                    setSelection = setSelectedPlayerPositions
-                    subtitle = 'Positions held >20% of rounds'
-                  } else if (activeTab === 'allAbilities') {
-                    // All Abilities tab - group by agent + ability type (combine all positions)
-                    const abilityData = selectedAllAbilitySide === 'defender' ? defAbilityMapData : offAbilityMapData
-                    if (abilityData) {
-                      // Group all clusters by agent + ability type
-                      const grouped: { [key: string]: { agentName: string; abilityId: string; positions: { x: number; y: number }[]; count: number } } = {}
+                      )
                       
-                      for (const player of abilityData.players.filter(p => isRealPlayer(p.playerName))) {
-                        for (const cluster of player.clusters) {
-                          const key = `${cluster.agentName}-${cluster.abilityId}`
-                          if (!grouped[key]) {
-                            grouped[key] = {
-                              agentName: cluster.agentName,
-                              abilityId: cluster.abilityId,
-                              positions: [],
-                              count: 0,
-                            }
-                          }
-                          grouped[key].positions.push(...(cluster.positions || []))
-                          grouped[key].count += cluster.count
+                      // Create "(All)" entries for each player - combines all their positions
+                      const allEntries = filteredPlayers.map(player => {
+                        const allPositions = player.clusters.flatMap(c => c.positions || [])
+                        return {
+                          id: `${player.playerId}-all`,
+                          playerName: `${player.playerName} (All)`,
+                          callout: `${player.clusters.length} locations`,
+                          percentage: 0, // Don't show percentage for "All"
+                          positions: allPositions,
+                          count: 0, // Hide count
                         }
-                      }
+                      }).filter(e => e.positions.length > 0)
                       
-                      allClusters = Object.entries(grouped)
-                        .map(([key, data]) => ({
-                          id: `all-${selectedAllAbilitySide}-${key}`,
-                          playerName: data.agentName, // Using agentName in playerName field for display
-                          callout: '', // Not used for display
-                          percentage: 0, // Not relevant for this view
-                          positions: data.positions,
-                          count: data.count,
-                          extra: data.abilityId,
-                        }))
-                        .sort((a, b) => a.playerName.localeCompare(b.playerName) || (a.extra || '').localeCompare(b.extra || ''))
-                    }
-                    selectedSet = selectedAllAbilities
-                    setSelection = setSelectedAllAbilities
-                    subtitle = `All ${selectedAllAbilitySide} ability usage (25s after round start)`
-                  } else if (activeTab === 'defAbility' && defAbilityMapData) {
-                    allClusters = defAbilityMapData.players
-                      .filter(player => isRealPlayer(player.playerName))
-                      .flatMap(player =>
-                        player.clusters.filter(c => c.percentage >= 15).map((c, idx) => ({
-                          id: `def-${player.playerId}-${c.abilityId}-${c.agentName}-${idx}`,
-                          playerName: player.playerName,
-                          callout: c.callout,
-                          percentage: c.percentage,
-                          positions: c.positions || [],
-                          count: c.count,
-                          extra: c.abilityId,
-                        }))
-                      ).sort((a, b) => b.percentage - a.percentage)
-                    selectedSet = selectedDefAbilities
-                    setSelection = setSelectedDefAbilities
-                    subtitle = 'Up to 25s after defender round start'
-                  } else if (activeTab === 'offAbility' && offAbilityMapData) {
-                    allClusters = offAbilityMapData.players
-                      .filter(player => isRealPlayer(player.playerName))
-                      .flatMap(player =>
-                        player.clusters.filter(c => c.count >= 2).map((c, idx) => ({
-                          id: `off-${player.playerId}-${c.abilityId}-${c.agentName}-${c.callout}-${idx}`,
-                          playerName: `${c.agentName}: ${c.abilityId}`,
-                          callout: c.callout,
-                          percentage: c.percentage,
-                          positions: c.positions || [],
-                          count: c.count,
-                          // No extra field - agentName:abilityId is already in playerName
-                        }))
-                      ).sort((a, b) => b.count - a.count) // Sort by count since we're filtering by count
-                    selectedSet = selectedOffAbilities
-                    setSelection = setSelectedOffAbilities
-                    subtitle = 'Abilities used ≥2 times (25s after round start)'
-                  } else if (activeTab === 'postPlant' && postPlantMapData) {
-                    const sites = postPlantMapData.bySite
-                    const site = selectedPostPlantSite || sites[0]?.site
-                    const siteData = sites.find(s => s.site === site)
-                    if (siteData) {
-                      allClusters = siteData.players
+                      // Combine: Individual clusters first, then All entries at the bottom
+                      allClusters = [
+                        ...individualClusters.sort((a, b) => b.percentage - a.percentage),
+                        ...allEntries.sort((a, b) => a.playerName.localeCompare(b.playerName)),
+                      ]
+                      selectedSet = selectedPlayerPositions
+                      setSelection = setSelectedPlayerPositions
+                    } else if (activeTab === 'defAbility' && defAbilityMapData) {
+                      allClusters = defAbilityMapData.players
                         .filter(player => isRealPlayer(player.playerName))
                         .flatMap(player =>
                           player.clusters.filter(c => c.percentage >= 15).map((c, idx) => ({
+                            id: `def-${player.playerId}-${c.abilityId}-${c.agentName}-${idx}`,
+                            playerName: `${c.agentName}: ${c.abilityId}`,
+                            callout: c.callout,
+                            percentage: c.percentage,
+                            positions: c.positions || [],
+                            count: c.count,
+                          }))
+                        ).sort((a, b) => b.percentage - a.percentage)
+                      selectedSet = selectedDefAbilities
+                      setSelection = setSelectedDefAbilities
+                    } else if (activeTab === 'offAbility' && offAbilityMapData) {
+                      allClusters = offAbilityMapData.players
+                        .filter(player => isRealPlayer(player.playerName))
+                        .flatMap(player =>
+                          player.clusters.filter(c => c.count >= 2).map((c, idx) => ({
+                            id: `off-${player.playerId}-${c.abilityId}-${c.agentName}-${c.callout}-${idx}`,
+                            playerName: `${c.agentName}: ${c.abilityId}`,
+                            callout: c.callout,
+                            percentage: c.percentage,
+                            positions: c.positions || [],
+                            count: c.count,
+                          }))
+                        ).sort((a, b) => b.count - a.count)
+                      selectedSet = selectedOffAbilities
+                      setSelection = setSelectedOffAbilities
+                    } else if (activeTab === 'postPlant' && postPlantMapData) {
+                      const sites = postPlantMapData.bySite
+                      const site = selectedPostPlantSite || sites[0]?.site
+                      const siteData = sites.find(s => s.site === site)
+                      if (siteData) {
+                        const filteredPlayers = siteData.players.filter(player => isRealPlayer(player.playerName))
+                        
+                        // Create individual cluster entries
+                        const individualClusters = filteredPlayers.flatMap(player =>
+                          player.clusters.filter(c => c.percentage >= 15 && c.count >= 2).map((c, idx) => ({
                             id: `postplant-${site}-${player.playerId}-${c.callout}-${idx}`,
                             playerName: player.playerName,
                             callout: c.callout,
@@ -2449,128 +2450,474 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                             positions: c.positions || [],
                             count: c.count,
                           }))
-                        ).sort((a, b) => b.percentage - a.percentage)
+                        )
+                        
+                        // Create "(All)" entries for each player - combines all their positions
+                        const allEntries = filteredPlayers.map(player => {
+                          const allPositions = player.clusters.flatMap(c => c.positions || [])
+                          return {
+                            id: `postplant-${site}-${player.playerId}-all`,
+                            playerName: `${player.playerName} (All)`,
+                            callout: `${player.clusters.length} locations`,
+                            percentage: 0, // Don't show percentage for "All"
+                            positions: allPositions,
+                            count: 0, // Hide count
+                          }
+                        }).filter(e => e.positions.length > 0)
+                        
+                        // Combine: Individual clusters first, then All entries at the bottom
+                        allClusters = [
+                          ...individualClusters.sort((a, b) => b.percentage - a.percentage),
+                          ...allEntries.sort((a, b) => a.playerName.localeCompare(b.playerName)),
+                        ]
+                      }
+                      selectedSet = selectedPostPlantPositions
+                      setSelection = setSelectedPostPlantPositions
                     }
-                    selectedSet = selectedPostPlantPositions
-                    setSelection = setSelectedPostPlantPositions
-                    subtitle = `10s after ${selectedPostPlantSite || postPlantMapData.bySite[0]?.site || ''} plant`
-                  }
-                  
-                  // null = first load, default to first item; empty Set = user cleared all, show nothing
-                  effectiveSelection = selectedSet === null 
-                    ? (allClusters.length > 0 ? new Set([allClusters[0].id]) : new Set())
-                    : selectedSet
-                  
-                  const staticPositions = allClusters
-                    .filter(c => effectiveSelection.has(c.id))
-                    .flatMap(c => c.positions.map((pos, idx) => ({
-                      id: `${c.id}-pos-${idx}`,
-                      label: c.playerName,
-                      x: pos.x,
-                      y: pos.y,
-                      percentage: c.percentage,
-                      tooltip: c.callout 
-                        ? `${c.playerName}: ${c.callout} (${Math.round(c.percentage)}%)`
-                        : `${c.playerName}: ${c.extra || 'ability'}`,
-                    })))
-                  
-                  return (
-                    <div className={`${styles.valPerMapSubsection} ${styles.valPerMapSubsectionFull}`}>
-                      <div className={styles.valMapAnalysisHeader}>
-                        <div className={styles.valMapAnalysisTabs}>
-                          {tabs.map(tab => (
-                            <button
-                              key={tab.id}
-                              className={`${styles.valMapAnalysisTab} ${activeTab === tab.id ? styles.valMapAnalysisTabActive : ''}`}
-                              onClick={() => setSelectedMapAnalysisTab(tab.id)}
-                            >
-                              {tab.label}
-                            </button>
-                          ))}
+                    
+                    effectiveSelection = selectedSet === null 
+                      ? (allClusters.length > 0 ? new Set([allClusters[0].id]) : new Set())
+                      : selectedSet
+                    
+                    // Create a map of cluster id -> color (based on position in allClusters)
+                    const clusterColorMap = new Map<string, string>()
+                    allClusters.forEach((c, idx) => {
+                      clusterColorMap.set(c.id, CLUSTER_COLORS[idx % CLUSTER_COLORS.length])
+                    })
+                    
+                    // Calculate positions for regular tabs
+                    let staticPositions: { id: string; label: string; x: number; y: number; percentage?: number; tooltip?: string; color?: string; agentId?: string; side?: 'attacker' | 'defender'; isDead?: boolean }[] = []
+                    
+                    // Get current round for playback mode
+                    // Sort: most recent game first, then round 1 -> max within each game
+                    const rawPlaybackRounds = playbackMapData 
+                      ? (selectedPlaybackSide === 'attacker' ? playbackMapData.attacker : playbackMapData.defender)
+                      : []
+                    
+                    // Sort by date (descending - most recent first), then by round number (ascending)
+                    const playbackRounds = [...rawPlaybackRounds].sort((a, b) => {
+                      // First sort by date (most recent first)
+                      const dateCompare = new Date(b.date).getTime() - new Date(a.date).getTime()
+                      if (dateCompare !== 0) return dateCompare
+                      // If same date (same game), sort by round number ascending
+                      return a.roundNumber - b.roundNumber
+                    })
+                    
+                    const currentPlaybackRound = playbackRounds[currentPlaybackRoundIdx]
+                    
+                    if (activeTab === 'playback' && currentPlaybackRound) {
+                      // Calculate playback positions for CURRENT round only with interpolation
+                      const round = currentPlaybackRound
+                      
+                      // Start 10 seconds before freezetime end (show some buy phase)
+                      const freezeTimeEnd = round.freezetimeEndedAt 
+                        ? new Date(round.freezetimeEndedAt).getTime() 
+                        : round.roundStartTime
+                      const playbackStartTime = freezeTimeEnd - 10000 // 10 seconds before freeze end
+                      const roundDuration = round.roundEndTime - playbackStartTime
+                      // Cap targetTime to round end (during hold period, show last frame)
+                      const targetTime = Math.min(playbackStartTime + playbackTime, round.roundEndTime)
+                      
+                      // Find snapshots for interpolation
+                      let beforeSnapshot = round.coordinateTracking[0]
+                      let afterSnapshot = round.coordinateTracking[0]
+                      
+                      for (let i = 0; i < round.coordinateTracking.length; i++) {
+                        const snapshot = round.coordinateTracking[i]
+                        if (snapshot.time <= targetTime) {
+                          beforeSnapshot = snapshot
+                          afterSnapshot = round.coordinateTracking[i + 1] || snapshot
+                        } else {
+                          afterSnapshot = snapshot
+                          break
+                        }
+                      }
+                      
+                      // Calculate interpolation factor
+                      const timeDiff = afterSnapshot.time - beforeSnapshot.time
+                      const timeProgress = targetTime - beforeSnapshot.time
+                      const t = timeDiff > 0 ? Math.max(0, Math.min(1, timeProgress / timeDiff)) : 0
+                      
+                      // Get kills that happened before this time
+                      const deadPlayers = new Set<string>()
+                      for (const kill of round.kills) {
+                        const killTime = new Date(kill.occurredAt).getTime()
+                        if (killTime <= targetTime) {
+                          deadPlayers.add(kill.victimId)
+                        }
+                      }
+                      
+                      // Add interpolated positions for all players (both teams)
+                      for (const beforeCoord of beforeSnapshot.playerCoordinates) {
+                        const player = round.players.find(p => p.playerId === beforeCoord.playerId)
+                        if (!player) continue
+                        
+                        const isDead = deadPlayers.has(beforeCoord.playerId)
+                        
+                        // Find matching coord in after snapshot for interpolation
+                        const afterCoord = afterSnapshot.playerCoordinates.find(c => c.playerId === beforeCoord.playerId)
+                        
+                        const x = afterCoord ? beforeCoord.x + (afterCoord.x - beforeCoord.x) * t : beforeCoord.x
+                        const y = afterCoord ? beforeCoord.y + (afterCoord.y - beforeCoord.y) * t : beforeCoord.y
+                        
+                        staticPositions.push({
+                          id: `${round.roundId}-${beforeCoord.playerId}`,
+                          label: player.playerName,
+                          x,
+                          y,
+                          tooltip: `${player.playerName} (${player.agentId})${isDead ? ' - Dead' : ''}`,
+                          agentId: player.agentId,
+                          side: player.side,
+                          isDead,
+                        })
+                      }
+                      
+                      // Check if round is over, advance to next
+                      // Hold last frame for 1 real second before advancing (1s real time = PLAYBACK_SPEED * 1000ms game time)
+                      const holdTimeMs = PLAYBACK_SPEED * 1000 // 1 real second at current speed
+                      if (isPlaybackPlaying && playbackTime >= roundDuration + holdTimeMs) {
+                        const nextIdx = currentPlaybackRoundIdx + 1
+                        if (nextIdx < playbackRounds.length) {
+                          setCurrentPlaybackRoundIdx(nextIdx)
+                          setPlaybackTime(0)
+                        } else {
+                          // All rounds done, stop playback
+                          setIsPlaybackPlaying(false)
+                          if (playbackIntervalRef.current) {
+                            clearInterval(playbackIntervalRef.current)
+                            playbackIntervalRef.current = null
+                          }
+                        }
+                      }
+                    } else if (activeTab !== 'playback') {
+                      staticPositions = allClusters
+                        .filter(c => effectiveSelection.has(c.id))
+                        .flatMap(c => c.positions.map((pos, idx) => ({
+                          id: `${c.id}-pos-${idx}`,
+                          label: c.playerName,
+                          x: pos.x,
+                          y: pos.y,
+                          percentage: c.percentage,
+                          tooltip: c.callout 
+                            ? `${c.playerName}: ${c.callout} (${Math.round(c.percentage)}%)`
+                            : `${c.playerName}`,
+                          color: clusterColorMap.get(c.id),
+                        })))
+                    }
+                    
+                    // Calculate game clock for playback
+                    let gameClockDisplay = ''
+                    if (activeTab === 'playback' && currentPlaybackRound) {
+                      const round = currentPlaybackRound
+                      const elapsedMs = playbackTime
+                      
+                      // Start 10 seconds before freezetime end
+                      const freezeTimeEnd = round.freezetimeEndedAt 
+                        ? new Date(round.freezetimeEndedAt).getTime() 
+                        : round.roundStartTime
+                      const playbackStartTime = freezeTimeEnd - 10000
+                      
+                      // Time since combat actually started (freezetime end)
+                      const timeSinceCombatStart = Math.max(0, elapsedMs - 10000) // Subtract the 10s pre-freeze
+                      
+                      // Check if bomb has been planted
+                      const bombPlanted = round.bombPlantTime && 
+                        (playbackStartTime + elapsedMs) >= round.bombPlantTime
+                      
+                      let remainingMs: number
+                      if (bombPlanted && round.bombPlantTime) {
+                        // Bomb planted - 40 second timer from plant time
+                        const timeSincePlant = (playbackStartTime + elapsedMs) - round.bombPlantTime
+                        remainingMs = Math.max(0, 40000 - timeSincePlant)
+                      } else {
+                        // Normal round - 110 second timer (1:50)
+                        remainingMs = Math.max(0, 110000 - timeSinceCombatStart)
+                      }
+                      
+                      const seconds = Math.floor(remainingMs / 1000)
+                      const mins = Math.floor(seconds / 60)
+                      const secs = seconds % 60
+                      gameClockDisplay = `${mins}:${secs.toString().padStart(2, '0')}`
+                    }
+                    
+                    return (
+                      <>
+                        <div className={styles.valMapCenter}>
+                          <ValorantMapPlayer
+                            mode="static"
+                            mapName={currentMapId}
+                            staticPositions={staticPositions}
+                            mapSize={550}
+                            dotSize="small"
+                            roundIndicator={activeTab === 'playback' && currentPlaybackRound ? `R${currentPlaybackRound.roundNumber}` : undefined}
+                            gameClock={activeTab === 'playback' && currentPlaybackRound ? gameClockDisplay : undefined}
+                          />
                         </div>
-                        {activeTab === 'allAbilities' && (
-                          <div className={styles.valPerMapSiteSelector}>
-                            <button
-                              className={`${styles.valPerMapSiteBtn} ${selectedAllAbilitySide === 'defender' ? styles.valPerMapSiteBtnActive : ''}`}
-                              onClick={() => { setSelectedAllAbilitySide('defender'); setSelectedAllAbilities(null) }}
-                            >
-                              Defender
-                            </button>
-                            <button
-                              className={`${styles.valPerMapSiteBtn} ${selectedAllAbilitySide === 'attacker' ? styles.valPerMapSiteBtnActive : ''}`}
-                              onClick={() => { setSelectedAllAbilitySide('attacker'); setSelectedAllAbilities(null) }}
-                            >
-                              Attacker
-                            </button>
-                          </div>
-                        )}
-                        {activeTab === 'postPlant' && postPlantMapData && (
-                          <div className={styles.valPerMapSiteSelector}>
-                            {postPlantMapData.bySite.map(s => (
-                              <button
-                                key={s.site}
-                                className={`${styles.valPerMapSiteBtn} ${(selectedPostPlantSite || postPlantMapData.bySite[0]?.site) === s.site ? styles.valPerMapSiteBtnActive : ''}`}
-                                onClick={() => { setSelectedPostPlantSite(s.site); setSelectedPostPlantPositions(null) }}
-                              >
-                                {s.site} ({s.totalPlants})
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className={styles.valMapAnalysisSubtitle}>{subtitle}</div>
-                      <div className={styles.valPlayerPosMapWrapper}>
-                        <ValorantMapPlayer
-                          mode="static"
-                          mapName={currentMapId}
-                          staticPositions={staticPositions}
-                          mapSize={350}
-                          dotSize="small"
-                        />
-                        <div className={styles.valPlayerPosFilters}>
-                          <div className={styles.valPlayerPosFiltersHeader}>
-                            <span>Select to display</span>
-                            <button
-                              className={styles.valPlayerPosSelectAll}
-                              onClick={() => {
-                                if (effectiveSelection.size === allClusters.length) {
-                                  setSelection(new Set()) // Clear all
-                                } else {
-                                  setSelection(new Set(allClusters.map(c => c.id)))
-                                }
-                              }}
-                            >
-                              {effectiveSelection.size === allClusters.length ? 'Clear' : 'All'}
-                            </button>
-                          </div>
-                          <div className={styles.valPlayerPosFilterList}>
-                            {allClusters.map(c => (
-                              <label key={c.id} className={`${styles.valPlayerPosFilterItem} ${effectiveSelection.has(c.id) ? styles.valPlayerPosFilterItemActive : ''}`}>
-                                <input
-                                  type="checkbox"
-                                  checked={effectiveSelection.has(c.id)}
-                                  onChange={(e) => {
-                                    const newSet = new Set(effectiveSelection)
-                                    if (e.target.checked) newSet.add(c.id)
-                                    else newSet.delete(c.id)
-                                    setSelection(newSet)
+                        
+                        <div className={styles.valMapRightSidebar}>
+                          <div className={styles.valRightTabGroups}>
+                            {abilityTabs.some(t => t.available) && (
+                              <div className={styles.valRightTabGroup}>
+                                <div className={styles.valRightTabGroupLabel}>Ability Usage</div>
+                                <div className={styles.valRightTabGroupBtns}>
+                                  {abilityTabs.filter(t => t.available).map(tab => (
+                                    <button
+                                      key={tab.id}
+                                      className={`${styles.valRightTab} ${activeTab === tab.id ? styles.valRightTabActive : ''}`}
+                                      onClick={() => setSelectedMapAnalysisTab(tab.id)}
+                                    >
+                                      {tab.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {locationTabs.some(t => t.available) && (
+                              <div className={styles.valRightTabGroup}>
+                                <div className={styles.valRightTabGroupLabel}>Location Tracking</div>
+                                <div className={styles.valRightTabGroupBtns}>
+                                  {locationTabs.filter(t => t.available).map(tab => (
+                                    <button
+                                      key={tab.id}
+                                      className={`${styles.valRightTab} ${activeTab === tab.id ? styles.valRightTabActive : ''}`}
+                                      onClick={() => setSelectedMapAnalysisTab(tab.id)}
+                                    >
+                                      {tab.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            </div>
+                          {/* Playback tab on separate line */}
+                          {playbackTabs.some(t => t.available) && (
+                            <div className={styles.valRightTabGroupSecondRow}>
+                              <div className={styles.valRightTabGroupLabel}>Round Playback</div>
+                              <div className={styles.valRightTabGroupBtns}>
+                                {playbackTabs.filter(t => t.available).map(tab => (
+                                  <button
+                                    key={tab.id}
+                                    className={`${styles.valRightTab} ${activeTab === tab.id ? styles.valRightTabActive : ''}`}
+                                    onClick={() => setSelectedMapAnalysisTab(tab.id)}
+                                  >
+                                    {tab.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {activeTab === 'postPlant' && postPlantMapData && (
+                            <div className={styles.valRightSubTabs}>
+                              {postPlantMapData.bySite.map(s => (
+                                <button
+                                  key={s.site}
+                                  className={`${styles.valRightSubTab} ${(selectedPostPlantSite || postPlantMapData.bySite[0]?.site) === s.site ? styles.valRightSubTabActive : ''}`}
+                                  onClick={() => { setSelectedPostPlantSite(s.site); setSelectedPostPlantPositions(null) }}
+                                >
+                                  {s.site} ({s.totalPlants})
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {activeTab === 'playback' && playbackMapData ? (
+                            <>
+                              <div className={styles.valRightSubTabs}>
+                                <button
+                                  className={`${styles.valRightSubTab} ${selectedPlaybackSide === 'attacker' ? styles.valRightSubTabActive : ''}`}
+                                  onClick={() => { 
+                                    setSelectedPlaybackSide('attacker')
+                                    setIsPlaybackPlaying(false)
+                                    setPlaybackTime(0)
+                                    setCurrentPlaybackRoundIdx(0)
+                                    if (playbackIntervalRef.current) {
+                                      clearInterval(playbackIntervalRef.current)
+                                      playbackIntervalRef.current = null
+                                    }
                                   }}
-                                  className={styles.valPlayerPosCheckbox}
-                                />
-                                <span className={styles.valPlayerPosFilterLabel}>
-                                  {c.playerName}{c.extra ? `: ${c.extra}` : ''}{c.callout ? ` @ ${c.callout}` : ''}
-                                </span>
-                                <span className={styles.valPlayerPosFilterPercent}>
-                                  {c.count}{c.percentage > 0 ? ` (${Math.round(c.percentage)}%)` : ''}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
+                                >
+                                  Attacker ({playbackMapData.attacker.length})
+                                </button>
+                                <button
+                                  className={`${styles.valRightSubTab} ${selectedPlaybackSide === 'defender' ? styles.valRightSubTabActive : ''}`}
+                                  onClick={() => { 
+                                    setSelectedPlaybackSide('defender')
+                                    setIsPlaybackPlaying(false)
+                                    setPlaybackTime(0)
+                                    setCurrentPlaybackRoundIdx(0)
+                                    if (playbackIntervalRef.current) {
+                                      clearInterval(playbackIntervalRef.current)
+                                      playbackIntervalRef.current = null
+                                    }
+                                  }}
+                                >
+                                  Defender ({playbackMapData.defender.length})
+                                </button>
+                              </div>
+                              
+                              {/* Current round info */}
+                              {currentPlaybackRound && (
+                                <div className={styles.valPlaybackCurrentRound}>
+                                  <span className={styles.valPlaybackRoundInfo}>
+                                    Round {currentPlaybackRoundIdx + 1}/{playbackRounds.length}: R{currentPlaybackRound.roundNumber} vs {currentPlaybackRound.opponent}
+                                  </span>
+                                  <span className={styles.valPlaybackRoundResult}>
+                                    {currentPlaybackRound.isWin ? '✓ Win' : '✗ Loss'}
+                                  </span>
+                                </div>
+                              )}
+                              
+                              <div className={styles.valPlaybackControls}>
+                                <button
+                                  className={styles.valPlaybackButton}
+                                  onClick={() => {
+                                    if (isPlaybackPlaying) {
+                                      // Stop playback
+                                      setIsPlaybackPlaying(false)
+                                      if (playbackIntervalRef.current) {
+                                        clearInterval(playbackIntervalRef.current)
+                                        playbackIntervalRef.current = null
+                                      }
+                                    } else {
+                                      // Start playback at 8x speed
+                                      setIsPlaybackPlaying(true)
+                                      lastTickTimeRef.current = performance.now()
+                                      playbackIntervalRef.current = setInterval(() => {
+                                        const now = performance.now()
+                                        const realElapsed = now - lastTickTimeRef.current
+                                        lastTickTimeRef.current = now
+                                        // 8x speed
+                                        const gameTimeElapsed = realElapsed * PLAYBACK_SPEED
+                                        setPlaybackTime(prev => prev + gameTimeElapsed)
+                                      }, TICK_INTERVAL_MS)
+                                    }
+                                  }}
+                                >
+                                  {isPlaybackPlaying ? 'Stop' : 'Start'}
+                                </button>
+                                
+                                <button
+                                  className={styles.valPlaybackButton}
+                                  onClick={() => {
+                                    // Skip to next round
+                                    const nextIdx = currentPlaybackRoundIdx + 1
+                                    if (nextIdx < playbackRounds.length) {
+                                      setCurrentPlaybackRoundIdx(nextIdx)
+                                      setPlaybackTime(0)
+                                    }
+                                  }}
+                                  disabled={currentPlaybackRoundIdx >= playbackRounds.length - 1}
+                                >
+                                  Skip
+                                </button>
+                                
+                                {currentPlaybackRound && (
+                                  <div className={styles.valPlaybackTime}>
+                                    {(playbackTime / 1000).toFixed(1)}s / {((currentPlaybackRound.roundEndTime - ((currentPlaybackRound.freezetimeEndedAt ? new Date(currentPlaybackRound.freezetimeEndedAt).getTime() : currentPlaybackRound.roundStartTime) - 10000)) / 1000).toFixed(0)}s
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <div className={styles.valPlaybackRoundLegend}>
+                                <div className={styles.valPlaybackLegendTitle}>Rounds ({playbackRounds.length} total)</div>
+                                {playbackRounds.map((round, idx) => {
+                                  const isCurrentRound = idx === currentPlaybackRoundIdx
+                                  // Check if this is a new game (different date than previous)
+                                  const prevRound = idx > 0 ? playbackRounds[idx - 1] : null
+                                  const isNewGame = !prevRound || prevRound.date !== round.date
+                                  
+                                  return (
+                                    <div key={round.roundId}>
+                                      {isNewGame && (
+                                        <div className={styles.valPlaybackGameHeader}>
+                                          vs {round.opponent} · {new Date(round.date).toLocaleDateString()}
+                                        </div>
+                                      )}
+                                      <div 
+                                        className={`${styles.valPlaybackRoundItem} ${isCurrentRound ? styles.valPlaybackRoundItemActive : ''}`}
+                                      >
+                                        <button
+                                          className={styles.valPlaybackRoundPlayBtn}
+                                          onClick={() => {
+                                            setCurrentPlaybackRoundIdx(idx)
+                                            setPlaybackTime(0)
+                                            setIsPlaybackPlaying(true)
+                                            lastTickTimeRef.current = performance.now()
+                                            if (playbackIntervalRef.current) {
+                                              clearInterval(playbackIntervalRef.current)
+                                            }
+                                            playbackIntervalRef.current = setInterval(() => {
+                                              const now = performance.now()
+                                              const realElapsed = now - lastTickTimeRef.current
+                                              lastTickTimeRef.current = now
+                                              const gameTimeElapsed = realElapsed * PLAYBACK_SPEED
+                                              setPlaybackTime(prev => prev + gameTimeElapsed)
+                                            }, TICK_INTERVAL_MS)
+                                          }}
+                                          title="Play this round"
+                                        >
+                                          ▶
+                                        </button>
+                                        <span className={styles.valPlaybackRoundLabel}>
+                                          R{round.roundNumber} {round.isWin ? '✓' : '✗'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </>
+                          ) : activeTab !== 'playback' && (
+                            <>
+                              <div className={styles.valRightTableHeader}>
+                                <span>Ability</span>
+                                <span>Location</span>
+                                <span>%</span>
+                              </div>
+                              
+                              <div className={styles.valRightTableBody}>
+                                {allClusters.map((c, idx) => {
+                                  const clusterColor = CLUSTER_COLORS[idx % CLUSTER_COLORS.length]
+                                  const isActive = effectiveSelection.has(c.id)
+                                  return (
+                                    <div
+                                      key={c.id}
+                                      className={`${styles.valRightTableRow} ${isActive ? styles.valRightTableRowActive : ''}`}
+                                      style={isActive ? { 
+                                        background: `${clusterColor}25`,
+                                        borderLeft: `3px solid ${clusterColor}`
+                                      } : undefined}
+                                      onClick={() => {
+                                        const newSet = new Set(effectiveSelection)
+                                        if (newSet.has(c.id)) {
+                                          newSet.delete(c.id)
+                                        } else {
+                                          newSet.add(c.id)
+                                        }
+                                        setSelection(newSet)
+                                      }}
+                                    >
+                                      <div className={styles.valRightAbilityCell}>
+                                        {c.playerName}{c.extra ? `: ${c.extra}` : ''}
+                                      </div>
+                                      <div className={styles.valRightLocationCell}>
+                                        {c.callout || '-'}
+                                      </div>
+                                      <div className={styles.valRightPercentCell}>
+                                        {c.percentage > 0 ? `${Math.round(c.percentage)}%` : (c.count > 0 ? c.count : '-')}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </>
+                          )}
                         </div>
-                      </div>
-                    </div>
-                  )
-                })()}
+                      </>
+                    )
+                  })()}
+                </div>
                 
                 {/* Lurker Tendencies */}
                 {lurkerMapData && (() => {
@@ -2622,7 +2969,6 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                     </div>
                   )
                 })()}
-                </div>
               </div>
             )
           })()}

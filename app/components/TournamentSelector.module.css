@@ -2040,6 +2040,545 @@
   margin-top: 1rem;
 }
 
+/* New 3-column map scouting layout */
+.valMapScoutingLayout {
+  display: flex;
+  gap: 1rem;
+  min-height: 600px;
+  margin-top: 1rem;
+}
+
+.valMapLeftSidebar {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.valMapCenter {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  position: relative;
+}
+
+.valMapRightSidebar {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+  height: 600px;
+}
+
+/* Left sidebar - Agent Picks compact */
+.valLeftAgentPicks {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.valLeftAgentPicksHeader {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.valLeftAgentPicksTable {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.valLeftAgentPicksTableHeader {
+  display: grid;
+  grid-template-columns: 1fr 50px 50px;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.valLeftAgentRow {
+  display: grid;
+  grid-template-columns: 1fr 50px 50px;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.valLeftAgentRow:last-child {
+  border-bottom: none;
+}
+
+.valLeftAgentInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.valLeftAgentImg {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+}
+
+.valLeftAgentName {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.valLeftAgentPick,
+.valLeftAgentWin {
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.valLeftAgentPick {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.valLeftAgentWin {
+  color: #4ade80;
+}
+
+/* Left sidebar - Setup Tabs */
+.valLeftSetupSection {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.valLeftSetupTabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.valLeftSetupTab {
+  flex: 1;
+  padding: 0.5rem 0.25rem;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.valLeftSetupTab:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.valLeftSetupTabActive {
+  color: #f472b6;
+  background: rgba(236, 72, 153, 0.1);
+}
+
+.valLeftSetupContent {
+  flex: 1;
+  padding: 0.75rem;
+  overflow-y: auto;
+}
+
+.valLeftFormationRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.valLeftFormationRow:last-child {
+  border-bottom: none;
+}
+
+.valLeftFormationChips {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.valLeftFormationChip {
+  padding: 0.15rem 0.35rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.valLeftFormationPercent {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  min-width: 35px;
+  text-align: right;
+}
+
+/* Right sidebar tabs and table */
+.valRightTabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.valRightTabGroups {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.valRightTabGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.valRightTabGroupLabel {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.valRightTabGroupBtns {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.valRightTab {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.valRightTab:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.valRightTabActive {
+  color: #f472b6;
+  background: rgba(236, 72, 153, 0.15);
+  border-color: #f472b6;
+}
+
+.valRightSubTabs {
+  display: flex;
+  padding: 0.5rem;
+  gap: 0.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.valRightSubTab {
+  padding: 0.35rem 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.valRightSubTab:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.valRightSubTabActive {
+  color: #f472b6;
+  background: rgba(236, 72, 153, 0.15);
+}
+
+.valRightTableHeader {
+  display: grid;
+  grid-template-columns: 1fr 100px 50px;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.valRightTableBody {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.valRightTableRow {
+  display: grid;
+  grid-template-columns: 1fr 100px 50px;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.valRightTableRow:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.valRightTableRowActive {
+  background: rgba(236, 72, 153, 0.15);
+}
+
+.valRightTableRowActive:hover {
+  background: rgba(236, 72, 153, 0.2);
+}
+
+.valRightAbilityCell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.valRightAbilityIcon {
+  width: 18px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.valRightLocationCell {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.valRightPercentCell {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: right;
+}
+
+/* Playback Controls */
+.valPlaybackControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.valPlaybackButton {
+  padding: 8px 16px;
+  background: rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.valPlaybackButton:hover {
+  background: rgba(59, 130, 246, 0.4);
+  border-color: rgba(59, 130, 246, 0.6);
+}
+
+.valPlaybackTime {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: monospace;
+}
+
+.valPlaybackRoundLegend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.valPlaybackLegendTitle {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 4px;
+}
+
+.valPlaybackRoundItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.valPlaybackRoundDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.valPlaybackRoundLabel {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Second row for playback tab */
+.valRightTabGroupSecondRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 4px;
+}
+
+/* Current round info display */
+.valPlaybackCurrentRound {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.valPlaybackRoundInfo {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+.valPlaybackRoundResult {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Active round item */
+.valPlaybackRoundItemActive {
+  background: rgba(59, 130, 246, 0.2);
+  border-left: 2px solid rgba(59, 130, 246, 0.6);
+  padding-left: 6px;
+  margin-left: -8px;
+}
+
+/* Play button for each round */
+.valPlaybackRoundPlayBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.6rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.valPlaybackRoundPlayBtn:hover {
+  background: rgba(59, 130, 246, 0.5);
+}
+
+/* Remove old round dot */
+.valPlaybackRoundDot {
+  display: none;
+}
+
+/* Game header in round list */
+.valPlaybackGameHeader {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 8px 4px 4px 4px;
+  margin-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.valPlaybackGameHeader:first-child {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+
+/* Playback round indicator - top left of map */
+.valPlaybackRoundIndicator {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Playback game clock - top right of map */
+.valPlaybackGameClock {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 10px;
+  border-radius: 4px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+  pointer-events: none;
+  font-family: monospace;
+}
+
 .valPerMapSubsection {
   padding: 0.625rem 0.75rem;
   background: rgba(0, 0, 0, 0.2);

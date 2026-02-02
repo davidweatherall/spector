@@ -1,4 +1,80 @@
 import { ValorantAnalyticsOutput } from './types'
+import { getClosestCalloutData } from '../utils/valorantMapData'
+
+// Distance calculation for clustering
+function distanceBetween(x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x1 - x2
+  const dy = y1 - y2
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+// Cluster merge radius - positions within this distance are considered same spot
+const CLUSTER_MERGE_RADIUS = 250
+
+/**
+ * DBSCAN-style clustering: group positions by density
+ * Takes raw positions and returns clustered groups
+ */
+function clusterRawPositions(
+  positions: { x: number; y: number }[], 
+  radius: number,
+  mapId: string
+): { centroidX: number; centroidY: number; callout: string; superRegion: string; count: number; positions: { x: number; y: number }[] }[] {
+  if (positions.length === 0) return []
+  
+  const visited = new Set<number>()
+  const clusters: { positions: { x: number; y: number }[] }[] = []
+  
+  for (let i = 0; i < positions.length; i++) {
+    if (visited.has(i)) continue
+    
+    // Start a new cluster with this position
+    const clusterPositions: { x: number; y: number }[] = []
+    const queue = [i]
+    
+    while (queue.length > 0) {
+      const idx = queue.shift()!
+      if (visited.has(idx)) continue
+      visited.add(idx)
+      
+      const pos = positions[idx]
+      clusterPositions.push(pos)
+      
+      // Find all unvisited neighbors within radius
+      for (let j = 0; j < positions.length; j++) {
+        if (!visited.has(j) && distanceBetween(pos.x, pos.y, positions[j].x, positions[j].y) <= radius) {
+          queue.push(j)
+        }
+      }
+    }
+    
+    if (clusterPositions.length > 0) {
+      clusters.push({ positions: clusterPositions })
+    }
+  }
+  
+  // Convert to output format with median centroids and callouts
+  return clusters
+    .filter(c => c.positions.length >= 2) // Only clusters with 2+ occurrences
+    .map(c => {
+      const sortedX = c.positions.map(p => p.x).sort((a, b) => a - b)
+      const sortedY = c.positions.map(p => p.y).sort((a, b) => a - b)
+      const midIdx = Math.floor(c.positions.length / 2)
+      const medianX = sortedX[midIdx]
+      const medianY = sortedY[midIdx]
+      
+      const calloutData = getClosestCalloutData(mapId, medianX, medianY)
+      return {
+        centroidX: medianX,
+        centroidY: medianY,
+        callout: calloutData ? `${calloutData.superRegionName}: ${calloutData.regionName}` : 'Unknown',
+        superRegion: calloutData?.superRegionName || 'Unknown',
+        count: c.positions.length,
+        positions: c.positions,
+      }
+    })
+    .sort((a, b) => b.count - a.count)
+}
 
 /**
  * Map frequency statistics
@@ -307,6 +383,49 @@ export interface ValorantScoutingReport {
       }[]
     }[]
   }[]
+  
+  // Playback data - raw round data for synchronized playback
+  playbackData: {
+    byMap: {
+      mapId: string
+      mapName: string
+      attacker: PlaybackRound[]
+      defender: PlaybackRound[]
+    }[]
+  } | null
+}
+
+// Playback round data for synchronized multi-round playback
+export interface PlaybackRound {
+  roundId: string
+  seriesId: string
+  gameNumber: number
+  roundNumber: number
+  opponent: string
+  date: string
+  ourSide: 'attacker' | 'defender'
+  isWin: boolean
+  players: {
+    playerId: string
+    playerName: string
+    teamId: string
+    teamName: string
+    agentId: string
+    side: 'attacker' | 'defender'
+  }[]
+  coordinateTracking: {
+    time: number
+    playerCoordinates: { playerId: string; x: number; y: number }[]
+  }[]
+  kills: {
+    killerId: string
+    victimId: string
+    occurredAt: string
+  }[]
+  freezetimeEndedAt: string | null
+  roundStartTime: number
+  roundEndTime: number
+  bombPlantTime: number | null
 }
 
 /**
@@ -506,15 +625,15 @@ export function aggregateValorantScoutingReport(
     offensive: { buy: 0, eco: 0 },
   }
   
-  // Collect player position data
-  // map -> player -> clusters[]
+  // Collect player position data - raw positions first, cluster at the end
+  // map -> player -> rawPositions[]
   type PlayerCluster = { centroidX: number; centroidY: number; callout: string; superRegion: string; count: number; positions: { x: number; y: number }[] }
   const playerPositionsByMap: {
     [mapId: string]: {
       [playerId: string]: {
         playerName: string
         totalRounds: number
-        clusters: PlayerCluster[]
+        rawPositions: { x: number; y: number }[] // Collect raw positions, cluster later
       }
     }
   } = {}
@@ -612,7 +731,7 @@ export function aggregateValorantScoutingReport(
           
           // Track first ban availability for "first ban when available %" calculation
           // Get opponent bans that occurred before our first ban
-          const opponentBansBeforeOurs = new Set(seq.opponentBansBeforeOurFirstBan || [])
+          const opponentBansBeforeOurs = new Set<string>(seq.opponentBansBeforeOurFirstBan || [])
           const ourFirstBan = seq.banPhase1Actions?.[0]?.mapId
           
           // Get all maps we've seen in veto to track availability
@@ -663,7 +782,7 @@ export function aggregateValorantScoutingReport(
           
           // Track map availability for "pick when available %" calculation
           // Get all maps that were banned before our pick (by both teams)
-          const bannedMaps = new Set(seq.allBansBeforeOurPick || [])
+          const bannedMaps = new Set<string>(seq.allBansBeforeOurPick || [])
           const ourPicks = (seq.pickActions || []).map((a: any) => a.mapId)
           
           // Standard Valorant map pool (we'll use the maps we've seen)
@@ -958,36 +1077,15 @@ export function aggregateValorantScoutingReport(
               playerPositionsByMap[mapId][player.playerId] = {
                 playerName: player.playerName,
                 totalRounds: 0,
-                clusters: [],
+                rawPositions: [],
               }
             }
             
             playerPositionsByMap[mapId][player.playerId].totalRounds += player.totalRounds || 0
             
-            // Merge clusters
+            // Collect all raw positions from all series - clustering happens later
             for (const cluster of player.clusters || []) {
-              const existing = playerPositionsByMap[mapId][player.playerId].clusters.find(
-                c => c.callout === cluster.callout
-              )
-              if (existing) {
-                existing.count += cluster.count
-                // Merge positions
-                existing.positions = [...existing.positions, ...(cluster.positions || [])]
-                // Recalculate centroid from all positions
-                if (existing.positions.length > 0) {
-                  existing.centroidX = existing.positions.reduce((sum, p) => sum + p.x, 0) / existing.positions.length
-                  existing.centroidY = existing.positions.reduce((sum, p) => sum + p.y, 0) / existing.positions.length
-                }
-              } else {
-                playerPositionsByMap[mapId][player.playerId].clusters.push({
-                  centroidX: cluster.centroidX || 0,
-                  centroidY: cluster.centroidY || 0,
-                  callout: cluster.callout,
-                  superRegion: cluster.superRegion,
-                  count: cluster.count,
-                  positions: cluster.positions || [],
-                })
-              }
+              playerPositionsByMap[mapId][player.playerId].rawPositions.push(...(cluster.positions || []))
             }
           }
         }
@@ -1222,17 +1320,27 @@ export function aggregateValorantScoutingReport(
               
               postPlantByMap[mapId].bySite[site].players[player.playerId].totalPlants += player.totalPlants || 0
               
-              // Merge clusters
+              // Merge clusters by coordinate proximity (not by callout name)
               for (const cluster of player.clusters || []) {
                 const existing = postPlantByMap[mapId].bySite[site].players[player.playerId].clusters.find(
-                  c => c.callout === cluster.callout
+                  c => distanceBetween(c.centroidX, c.centroidY, cluster.centroidX || 0, cluster.centroidY || 0) <= CLUSTER_MERGE_RADIUS
                 )
                 if (existing) {
                   existing.count += cluster.count
                   existing.positions = [...existing.positions, ...(cluster.positions || [])]
                   if (existing.positions.length > 0) {
-                    existing.centroidX = existing.positions.reduce((sum, p) => sum + p.x, 0) / existing.positions.length
-                    existing.centroidY = existing.positions.reduce((sum, p) => sum + p.y, 0) / existing.positions.length
+                    // Use median for centroid calculation
+                    const sortedX = existing.positions.map(p => p.x).sort((a, b) => a - b)
+                    const sortedY = existing.positions.map(p => p.y).sort((a, b) => a - b)
+                    const midIdx = Math.floor(existing.positions.length / 2)
+                    existing.centroidX = sortedX[midIdx]
+                    existing.centroidY = sortedY[midIdx]
+                    // Re-derive callout from the new centroid position
+                    const calloutData = getClosestCalloutData(mapId, existing.centroidX, existing.centroidY)
+                    if (calloutData) {
+                      existing.callout = `${calloutData.superRegionName}: ${calloutData.regionName}`
+                      existing.superRegion = calloutData.superRegionName
+                    }
                   }
                 } else {
                   postPlantByMap[mapId].bySite[site].players[player.playerId].clusters.push({
@@ -1537,25 +1645,28 @@ export function aggregateValorantScoutingReport(
       },
     } : null,
     
-    // Player Positions
+    // Player Positions - cluster raw positions now that we have all data
     playerPositions: Object.keys(playerPositionsByMap).length > 0 ? {
       byMap: Object.entries(playerPositionsByMap)
         .map(([mapId, players]) => ({
           mapId,
           mapName: formatMapName(mapId),
           players: Object.entries(players)
-            .map(([playerId, data]) => ({
-              playerId,
-              playerName: data.playerName,
-              totalRounds: data.totalRounds,
-              clusters: data.clusters
-                .map(c => ({
-                  ...c,
-                  percentage: data.totalRounds > 0 ? (c.count / data.totalRounds) * 100 : 0,
-                }))
-                .sort((a, b) => b.count - a.count)
-                .slice(0, 5),
-            }))
+            .map(([playerId, data]) => {
+              // Cluster raw positions now that we have all data from all series
+              const clusters = clusterRawPositions(data.rawPositions, CLUSTER_MERGE_RADIUS, mapId)
+              return {
+                playerId,
+                playerName: data.playerName,
+                totalRounds: data.totalRounds,
+                clusters: clusters
+                  .map(c => ({
+                    ...c,
+                    percentage: data.totalRounds > 0 ? (c.count / data.totalRounds) * 100 : 0,
+                  }))
+                  .slice(0, 20), // Top 20 clusters per player
+              }
+            })
             .filter(p => p.clusters.length > 0)
             .sort((a, b) => a.playerName.localeCompare(b.playerName)),
         }))
@@ -1733,7 +1844,79 @@ export function aggregateValorantScoutingReport(
     } : null,
     
     seriesBreakdown,
+    
+    // Playback data - aggregate from playback analytics
+    playbackData: aggregatePlaybackData(teamId, analyticsResults),
   }
   
   return report
+}
+
+/**
+ * Aggregate playback data from multiple series
+ */
+function aggregatePlaybackData(
+  teamId: string,
+  results: { seriesId: string; analytics: ValorantAnalyticsOutput; opponent: string; date: string }[]
+): ValorantScoutingReport['playbackData'] {
+  const byMap: { [mapId: string]: { attacker: PlaybackRound[]; defender: PlaybackRound[] } } = {}
+  
+  for (const result of results) {
+    const playbackAnalytics = result.analytics.results.find(r => r.name === 'playback')
+    if (!playbackAnalytics?.data) continue
+    
+    // New structure: data.teams is an array of { teamId, teamName, byMap }
+    const playbackData = playbackAnalytics.data as { 
+      teams: { 
+        teamId: string
+        teamName: string
+        byMap: { mapId: string; attacker: any[]; defender: any[] }[] 
+      }[] 
+    }
+    
+    // Find the team we're interested in
+    const teamData = playbackData.teams?.find(t => t.teamId === teamId)
+    if (!teamData) continue
+    
+    for (const mapData of teamData.byMap) {
+      const mapId = mapData.mapId
+      
+      if (!byMap[mapId]) {
+        byMap[mapId] = { attacker: [], defender: [] }
+      }
+      
+      // Add rounds from this series
+      for (const round of mapData.attacker) {
+        byMap[mapId].attacker.push({
+          ...round,
+          seriesId: result.seriesId,
+          opponent: result.opponent,
+          date: result.date,
+        })
+      }
+      
+      for (const round of mapData.defender) {
+        byMap[mapId].defender.push({
+          ...round,
+          seriesId: result.seriesId,
+          opponent: result.opponent,
+          date: result.date,
+        })
+      }
+    }
+  }
+  
+  // Sort by date (most recent last) - include all rounds from all games
+  const sortedByMap = Object.entries(byMap).map(([mapId, sides]) => ({
+    mapId,
+    mapName: formatMapName(mapId),
+    attacker: sides.attacker
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    defender: sides.defender
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+  }))
+  
+  if (sortedByMap.length === 0) return null
+  
+  return { byMap: sortedByMap }
 }

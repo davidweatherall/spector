@@ -183,8 +183,8 @@ export function aggregateScoutingReport(
     banPhaseStats: null,
     seriesBreakdown: analyticsResults.map(r => {
       // Get draft data for this series
-      const draftData = r.analytics.results.find(res => res.name === 'draftAnalysis')?.data
-      const games: { gameNumber: number; isFirstPick: boolean; ourBans: string[]; ourPicks: string[]; enemyBans: string[]; enemyPicks: string[] }[] = []
+      const draftData = r.analytics.results.find(res => res.name === 'draftAnalysis')?.data as any
+      const games: { gameNumber: number; isFirstPick: boolean; ourTeamId: string; enemyTeamId: string; draftActions: { teamId: string; champName: string; action: 'ban' | 'pick'; isOurTeam: boolean }[] }[] = []
       
       if (draftData?.games) {
         for (const game of draftData.games) {
@@ -880,7 +880,7 @@ export function aggregateScoutingReport(
       // Actually, we store each ban separately with its unavailable list
       // We need to track unique games
       const gameInstances: { unavailable: Set<string> }[] = []
-      let currentUnavailable: string[] | null = null
+      let currentUnavailable: string | null = null
       
       for (const banEntry of bans) {
         // Detect new game by checking if unavailable list changed

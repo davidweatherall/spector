@@ -92,6 +92,8 @@ export function analyzeClassWinRate(series: StreamlinedSeries): AnalyticsResult 
   
   return {
     name: 'classWinRate',
+    description: 'Analyzes win rates based on champion class for top, jungle, and support roles',
     data: { games: results } as ClassWinRateResult,
+    generatedAt: new Date().toISOString(),
   }
 }

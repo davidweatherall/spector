@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react'
 
 // Types
 export interface Tournament {
@@ -379,21 +379,17 @@ export function GridDataProvider({ children }: GridDataProviderProps) {
   }, [lolData])
 
   const toggleValLeague = useCallback((league: string) => {
+    // Single-select: clicking same league deselects, clicking different league switches to it
     setSelectedValLeaguesState(prev => {
       const isSelected = prev.includes(league)
-      const newLeagues = isSelected
-        ? prev.filter(l => l !== league)
-        : [...prev, league]
+      const newLeagues = isSelected ? [] : [league]
       
-      // Update tournaments - select all from each league
+      // Update tournaments - select all from the league
       setValTeams([])
+      setSelectedValTeam(null)
       if (newLeagues.length > 0 && valData) {
-        const tournaments: Tournament[] = []
-        for (const l of newLeagues) {
-          const leagueTournaments = valData.tournamentsByLeague[l] || []
-          tournaments.push(...leagueTournaments)
-        }
-        setSelectedValTournaments(tournaments)
+        const leagueTournaments = valData.tournamentsByLeague[league] || []
+        setSelectedValTournaments(leagueTournaments)
       } else {
         setSelectedValTournaments([])
       }
@@ -424,6 +420,13 @@ export function GridDataProvider({ children }: GridDataProviderProps) {
       }
     })
   }, [])
+
+  // Auto-fetch Valorant teams when tournaments are selected
+  useEffect(() => {
+    if (selectedValTournaments.length > 0 && valTeams.length === 0 && !valTeamsLoading) {
+      fetchValTeams()
+    }
+  }, [selectedValTournaments, valTeams.length, valTeamsLoading, fetchValTeams])
 
   const value: GridDataContextType = {
     lolData,

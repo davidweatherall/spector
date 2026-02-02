@@ -4502,8 +4502,10 @@
   {
     "uuid": "2bee0dc9-4ffe-519b-1cbd-7fbe763a6047",
     "displayName": "Haven",
-    "xOffset": 0,
-    "yOffset": 0,
+    "xOffset": -1,
+    "yOffset": -2,
+    "xScale": 0.97,
+    "yScale": 1,
     "rotate": 180,
     "narrativeDescription": null,
     "tacticalDescription": "A/B/C Sites",

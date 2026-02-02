@@ -772,163 +772,115 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
 
   return (
     <div className={styles.wrapper}>
-      {/* Filters Panel */}
-      <div className={styles.container}>
-        {/* Header with toggle */}
-        <button 
-          className={styles.header}
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          <span className={styles.headerTitle}>Filters</span>
-          <span className={styles.headerSummary}>
-            {selectedLeagues.length > 0 && `${selectedLeagues.length} leagues`}
-            {selectedLeagues.length > 0 && selectedTournaments.length > 0 && ' · '}
-            {selectedTournaments.length > 0 && `${selectedTournaments.length} tournaments`}
-            {teams.length > 0 && ` · ${teams.length} teams`}
-            {selectedTeam && ` · ${selectedTeam.name}`}
-          </span>
-          <svg 
-            className={`${styles.chevron} ${isExpanded ? styles.chevronExpanded : ''}`}
-            width="16" 
-            height="16" 
-            viewBox="0 0 16 16" 
-            fill="none"
+      {/* Filters and Team Actions Row */}
+      <div className={styles.filtersAndActionsRow}>
+        {/* Filters Panel - Left Half */}
+        <div className={styles.filtersHalf}>
+          <button 
+            className={styles.header}
+            onClick={() => setIsExpanded(!isExpanded)}
           >
-            <path 
-              d="M4 6L8 10L12 6" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+            <span className={styles.headerTitle}>Filters</span>
+            <span className={styles.headerSummary}>
+              {selectedLeagues.length > 0 && `${selectedLeagues.length} leagues`}
+              {teams.length > 0 && ` · ${teams.length} teams`}
+              {selectedTeam && ` · ${selectedTeam.name}`}
+            </span>
+            <svg 
+              className={`${styles.chevron} ${isExpanded ? styles.chevronExpanded : ''}`}
+              width="16" 
+              height="16" 
+              viewBox="0 0 16 16" 
+              fill="none"
+            >
+              <path 
+                d="M4 6L8 10L12 6" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
 
-        {/* Collapsible content */}
-        {isExpanded && (
-          <div className={styles.filtersGrid}>
-            {/* Leagues Column */}
-            <div className={styles.column}>
-              <label className={styles.label}>
-                Leagues
-                <span className={styles.count}>({selectedLeagues.length})</span>
-              </label>
-              {loading ? (
-                <div className={styles.loadingText}>Loading...</div>
-              ) : (
-                <div className={`${styles.list} ${accentClass}`}>
-                  {data?.leagues.map((league) => (
-                    <label 
-                      key={league} 
-                      className={`${styles.checkboxItem} ${isLeagueSelected(league) ? styles.checked : ''}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isLeagueSelected(league)}
-                        onChange={() => handleLeagueToggle(league)}
-                        className={styles.checkbox}
-                      />
-                      <span className={styles.checkboxCustom}>
-                        {isLeagueSelected(league) && (
-                          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                            <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        )}
-                      </span>
-                      <span className={styles.checkboxLabel}>{league}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-              {error && <p className={styles.error}>{error}</p>}
-            </div>
-
-            {/* Tournaments Column */}
-            <div className={styles.column}>
-              <label className={styles.label}>
-                Tournaments
-                <span className={styles.count}>({selectedTournaments.length})</span>
-              </label>
-              {selectedLeagues.length === 0 ? (
-                <div className={styles.placeholder}>Select leagues first</div>
-              ) : tournamentsForSelectedLeagues.length === 0 ? (
-                <div className={styles.placeholder}>No tournaments found</div>
-              ) : (
-                <div className={`${styles.list} ${accentClass}`}>
-                  {tournamentsForSelectedLeagues.map((tournament) => (
-                    <label 
-                      key={tournament.id} 
-                      className={`${styles.checkboxItem} ${isTournamentSelected(tournament) ? styles.checked : ''}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isTournamentSelected(tournament)}
-                        onChange={() => handleTournamentToggle(tournament)}
-                        className={styles.checkbox}
-                      />
-                      <span className={styles.checkboxCustom}>
-                        {isTournamentSelected(tournament) && (
-                          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                            <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        )}
-                      </span>
-                      <span className={styles.checkboxLabel}>
-                        {tournament.name}
-                        {tournament.isLive && <span className={styles.liveBadge}>LIVE</span>}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Teams Column */}
-            <div className={styles.column}>
-              <div className={styles.teamsHeader}>
+          {/* Collapsible content */}
+          {isExpanded && (
+            <div className={styles.filtersGrid}>
+              {/* Leagues Column */}
+              <div className={styles.column}>
                 <label className={styles.label}>
-                  Teams
-                  <span className={styles.count}>({teams.length})</span>
+                  Leagues
                 </label>
-                {selectedTournaments.length > 0 && teams.length === 0 && (
-                  <button
-                    className={`${styles.findButton} ${accentClass}`}
-                    onClick={handleFindTeams}
-                    disabled={teamsLoading}
-                  >
-                    {teamsLoading ? 'Loading...' : 'Find Teams'}
-                  </button>
+                {loading ? (
+                  <div className={styles.loadingText}>Loading...</div>
+                ) : (
+                  <div className={`${styles.list} ${accentClass}`}>
+                    {data?.leagues.map((league) => (
+                      <label 
+                        key={league} 
+                        className={`${styles.checkboxItem} ${isLeagueSelected(league) ? styles.checked : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="league"
+                          checked={isLeagueSelected(league)}
+                          onChange={() => handleLeagueToggle(league)}
+                          className={styles.checkbox}
+                        />
+                        <span className={styles.checkboxCustom}>
+                          {isLeagueSelected(league) && (
+                            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                              <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                        </span>
+                        <span className={styles.checkboxLabel}>{league}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {error && <p className={styles.error}>{error}</p>}
+              </div>
+
+              {/* Teams Column */}
+              <div className={styles.column}>
+                <div className={styles.teamsHeader}>
+                  <label className={styles.label}>
+                    Teams
+                    <span className={styles.count}>({teams.length})</span>
+                  </label>
+                </div>
+                {teamsError ? (
+                  <div className={styles.error}>{teamsError}</div>
+                ) : teamsLoading ? (
+                  <div className={styles.placeholder}>Loading teams...</div>
+                ) : teams.length === 0 ? (
+                  <div className={styles.placeholder}>
+                    {selectedLeagues.length === 0 
+                      ? 'Select a league first' 
+                      : 'No teams found'}
+                  </div>
+                ) : (
+                  <div className={`${styles.list} ${accentClass}`}>
+                    {teams.map((team) => (
+                      <button
+                        key={team.id}
+                        className={`${styles.teamButton} ${isTeamSelected(team) ? styles.teamSelected : ''}`}
+                        onClick={() => handleTeamSelect(team)}
+                      >
+                        {team.name}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-              {teamsError ? (
-                <div className={styles.error}>{teamsError}</div>
-              ) : teams.length === 0 ? (
-                <div className={styles.placeholder}>
-                  {selectedTournaments.length === 0 
-                    ? 'Select tournaments first' 
-                    : 'Click "Find Teams" to load'}
-                </div>
-              ) : (
-                <div className={`${styles.list} ${accentClass}`}>
-                  {teams.map((team) => (
-                    <button
-                      key={team.id}
-                      className={`${styles.teamButton} ${isTeamSelected(team) ? styles.teamSelected : ''}`}
-                      onClick={() => handleTeamSelect(team)}
-                    >
-                      {team.name}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Team Actions Panel - CTA for scouting report (LoL only) */}
-      {selectedTeam && (
-        <div className={styles.teamActionsPanel}>
+        {/* Team Actions Panel - Right Half */}
+        {selectedTeam && (
+          <div className={styles.actionsHalf}>
           <div className={styles.teamActionsHeader}>
             <h3 className={styles.teamActionsTitle}>{selectedTeam.name}</h3>
             {gamesLoading ? (
@@ -948,13 +900,6 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
             ) : null}
           </div>
           <div className={styles.teamActionsButtons}>
-            <button
-              className={`${styles.scoutingButton} ${styles.scoutingButtonQuick} ${scoutingLoading ? styles.scoutingButtonLoading : ''} ${game === 'valorant' ? styles.scoutingButtonVal : ''}`}
-              onClick={() => game === 'lol' ? handleGenerateScoutingReport(5) : handleGenerateValScoutingReport(5)}
-              disabled={scoutingLoading || games.length === 0}
-            >
-              {scoutingLoading ? 'Generating...' : 'Quick Report (5 Games)'}
-            </button>
             <button
               className={`${styles.scoutingButton} ${scoutingLoading ? styles.scoutingButtonLoading : ''} ${game === 'valorant' ? styles.scoutingButtonVal : ''}`}
               onClick={() => game === 'lol' ? handleGenerateScoutingReport() : handleGenerateValScoutingReport()}
@@ -985,11 +930,12 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                   className={styles.customGameInputInline}
                   placeholder="10"
                 />
-                <span>Games</span>
+                <span>Recent Games</span>
               </button>
           </div>
         </div>
-      )}
+        )}
+      </div>
 
       {/* Scouting Report Loading Panel */}
       {scoutingLoading && (
@@ -3028,12 +2974,6 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                         {game === 'lol' && isCompleted && !isAnalyzing && <span className={styles.completedBadge}>✓</span>}
                         {(game !== 'lol' || (!isAnalyzing && !isCompleted)) && gameItem.tournament}
                       </div>
-                      <Link 
-                        href={`/${game === 'lol' ? 'lol' : 'val'}/series/${gameItem.id}`}
-                        className={styles.viewMatchButton}
-                      >
-                        View Match
-                      </Link>
                     </div>
                     
                     {/* Draft info for each game in this series - LoL only */}

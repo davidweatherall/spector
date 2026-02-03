@@ -251,6 +251,7 @@ export function GridDataProvider({ children }: GridDataProviderProps) {
   const fetchLolGames = useCallback(async () => {
     if (!selectedLolTeam || selectedLolTournaments.length === 0) return
 
+    setLolGames([]) // Clear old games immediately
     setLolGamesLoading(true)
     setLolGamesError(null)
 
@@ -287,6 +288,7 @@ export function GridDataProvider({ children }: GridDataProviderProps) {
   const fetchValGames = useCallback(async () => {
     if (!selectedValTeam || selectedValTournaments.length === 0) return
 
+    setValGames([]) // Clear old games immediately
     setValGamesLoading(true)
     setValGamesError(null)
 

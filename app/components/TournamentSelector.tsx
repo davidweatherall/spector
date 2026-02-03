@@ -873,7 +873,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
             <button
               className={`${styles.scoutingButton} ${scoutingLoading ? styles.scoutingButtonLoading : ''} ${game === 'valorant' ? styles.scoutingButtonVal : ''}`}
               onClick={() => game === 'lol' ? handleGenerateScoutingReport() : handleGenerateValScoutingReport()}
-              disabled={scoutingLoading || games.length === 0}
+              disabled={scoutingLoading || gamesLoading || games.length === 0}
             >
               {scoutingLoading ? 'Generating...' : `Full Report (${games.length} Games)`}
             </button>
@@ -885,7 +885,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                     game === 'lol' ? handleGenerateScoutingReport(count) : handleGenerateValScoutingReport(count)
                   }
                 }}
-                disabled={scoutingLoading || games.length === 0 || !customGameCount || parseInt(customGameCount, 10) < 1}
+                disabled={scoutingLoading || gamesLoading || games.length === 0 || !customGameCount || parseInt(customGameCount, 10) < 1}
               >
                 <input
                   type="number"

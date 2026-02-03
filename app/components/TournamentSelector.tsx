@@ -776,36 +776,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
       <div className={styles.filtersAndActionsRow}>
         {/* Filters Panel - Left Half */}
         <div className={styles.filtersHalf}>
-          <button 
-            className={styles.header}
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            <span className={styles.headerTitle}>Filters</span>
-            <span className={styles.headerSummary}>
-              {selectedLeagues.length > 0 && `${selectedLeagues.length} leagues`}
-              {teams.length > 0 && ` · ${teams.length} teams`}
-              {selectedTeam && ` · ${selectedTeam.name}`}
-            </span>
-            <svg 
-              className={`${styles.chevron} ${isExpanded ? styles.chevronExpanded : ''}`}
-              width="16" 
-              height="16" 
-              viewBox="0 0 16 16" 
-              fill="none"
-            >
-              <path 
-                d="M4 6L8 10L12 6" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-
-          {/* Collapsible content */}
-          {isExpanded && (
-            <div className={styles.filtersGrid}>
+          <div className={styles.filtersGrid}>
               {/* Leagues Column */}
               <div className={styles.column}>
                 <label className={styles.label}>
@@ -874,8 +845,7 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                   </div>
                 )}
               </div>
-            </div>
-          )}
+          </div>
         </div>
 
         {/* Team Actions Panel - Right Half */}
@@ -2350,33 +2320,87 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                       selectedSet = selectedPlayerPositions
                       setSelection = setSelectedPlayerPositions
                     } else if (activeTab === 'defAbility' && defAbilityMapData) {
-                      allClusters = defAbilityMapData.players
-                        .filter(player => isRealPlayer(player.playerName))
-                        .flatMap(player =>
-                          player.clusters.filter(c => c.percentage >= 15).map((c, idx) => ({
-                            id: `def-${player.playerId}-${c.abilityId}-${c.agentName}-${idx}`,
-                            playerName: `${c.agentName}: ${c.abilityId}`,
-                            callout: c.callout,
-                            percentage: c.percentage,
-                            positions: c.positions || [],
-                            count: c.count,
-                          }))
-                        ).sort((a, b) => b.percentage - a.percentage)
+                      const filteredPlayers = defAbilityMapData.players.filter(player => isRealPlayer(player.playerName))
+                      
+                      // Create individual cluster entries
+                      const individualClusters = filteredPlayers.flatMap(player =>
+                        player.clusters.filter(c => c.percentage >= 15).map((c, idx) => ({
+                          id: `def-${player.playerId}-${c.abilityId}-${c.agentName}-${idx}`,
+                          playerName: `${c.agentName}: ${c.abilityId}`,
+                          callout: c.callout,
+                          percentage: c.percentage,
+                          positions: c.positions || [],
+                          count: c.count,
+                        }))
+                      )
+                      
+                      // Create "(All)" entries for each unique agent:ability combination
+                      const allEntries = filteredPlayers.flatMap(player => {
+                        // Group clusters by abilityId
+                        const abilityGroups: { [key: string]: { agentName: string; abilityId: string; positions: { x: number; y: number }[] } } = {}
+                        for (const c of player.clusters) {
+                          const key = `${c.agentName}:${c.abilityId}`
+                          if (!abilityGroups[key]) {
+                            abilityGroups[key] = { agentName: c.agentName, abilityId: c.abilityId, positions: [] }
+                          }
+                          abilityGroups[key].positions.push(...(c.positions || []))
+                        }
+                        return Object.entries(abilityGroups).map(([key, data]) => ({
+                          id: `def-${player.playerId}-${key}-all`,
+                          playerName: `${data.agentName}: ${data.abilityId} (All)`,
+                          callout: `${data.positions.length} locations`,
+                          percentage: 0,
+                          positions: data.positions,
+                          count: 0,
+                        }))
+                      }).filter(e => e.positions.length > 0)
+                      
+                      allClusters = [
+                        ...individualClusters.sort((a, b) => b.percentage - a.percentage),
+                        ...allEntries.sort((a, b) => a.playerName.localeCompare(b.playerName)),
+                      ]
                       selectedSet = selectedDefAbilities
                       setSelection = setSelectedDefAbilities
                     } else if (activeTab === 'offAbility' && offAbilityMapData) {
-                      allClusters = offAbilityMapData.players
-                        .filter(player => isRealPlayer(player.playerName))
-                        .flatMap(player =>
-                          player.clusters.filter(c => c.count >= 2).map((c, idx) => ({
-                            id: `off-${player.playerId}-${c.abilityId}-${c.agentName}-${c.callout}-${idx}`,
-                            playerName: `${c.agentName}: ${c.abilityId}`,
-                            callout: c.callout,
-                            percentage: c.percentage,
-                            positions: c.positions || [],
-                            count: c.count,
-                          }))
-                        ).sort((a, b) => b.count - a.count)
+                      const filteredPlayers = offAbilityMapData.players.filter(player => isRealPlayer(player.playerName))
+                      
+                      // Create individual cluster entries
+                      const individualClusters = filteredPlayers.flatMap(player =>
+                        player.clusters.filter(c => c.count >= 2).map((c, idx) => ({
+                          id: `off-${player.playerId}-${c.abilityId}-${c.agentName}-${c.callout}-${idx}`,
+                          playerName: `${c.agentName}: ${c.abilityId}`,
+                          callout: c.callout,
+                          percentage: c.percentage,
+                          positions: c.positions || [],
+                          count: c.count,
+                        }))
+                      )
+                      
+                      // Create "(All)" entries for each unique agent:ability combination
+                      const allEntries = filteredPlayers.flatMap(player => {
+                        // Group clusters by abilityId
+                        const abilityGroups: { [key: string]: { agentName: string; abilityId: string; positions: { x: number; y: number }[] } } = {}
+                        for (const c of player.clusters) {
+                          const key = `${c.agentName}:${c.abilityId}`
+                          if (!abilityGroups[key]) {
+                            abilityGroups[key] = { agentName: c.agentName, abilityId: c.abilityId, positions: [] }
+                          }
+                          abilityGroups[key].positions.push(...(c.positions || []))
+                        }
+                        return Object.entries(abilityGroups).map(([key, data]) => ({
+                          id: `off-${player.playerId}-${key}-all`,
+                          playerName: `${data.agentName}: ${data.abilityId} (All)`,
+                          callout: `${data.positions.length} locations`,
+                          percentage: 0,
+                          positions: data.positions,
+                          count: 0,
+                        }))
+                      }).filter(e => e.positions.length > 0)
+                      
+                      allClusters = [
+                        ...individualClusters.sort((a, b) => b.count - a.count),
+                        ...allEntries.sort((a, b) => a.playerName.localeCompare(b.playerName)),
+                      ]
                       selectedSet = selectedOffAbilities
                       setSelection = setSelectedOffAbilities
                     } else if (activeTab === 'postPlant' && postPlantMapData) {
@@ -2821,6 +2845,11 @@ export default function TournamentSelector({ game }: TournamentSelectorProps) {
                                 <span>Location</span>
                                 <span>%</span>
                               </div>
+                              {activeTab === 'defAbility' && (
+                                <div className={styles.valDisclaimerText}>
+                                  Abilities used in freeze time or up to 25 seconds after round start
+                                </div>
+                              )}
                               
                               <div className={styles.valRightTableBody}>
                                 {allClusters.map((c, idx) => {

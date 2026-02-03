@@ -353,23 +353,19 @@ export function GridDataProvider({ children }: GridDataProviderProps) {
     }
   }, [valData])
 
-  // Toggle league selection
+  // Toggle league selection - single-select
   const toggleLolLeague = useCallback((league: string) => {
+    // Single-select: clicking same league deselects, clicking different league switches to it
     setSelectedLolLeaguesState(prev => {
       const isSelected = prev.includes(league)
-      const newLeagues = isSelected
-        ? prev.filter(l => l !== league)
-        : [...prev, league]
+      const newLeagues = isSelected ? [] : [league]
       
-      // Update tournaments - select all from each league
+      // Update tournaments - select all from the league
       setLolTeams([])
+      setSelectedLolTeam(null)
       if (newLeagues.length > 0 && lolData) {
-        const tournaments: Tournament[] = []
-        for (const l of newLeagues) {
-          const leagueTournaments = lolData.tournamentsByLeague[l] || []
-          tournaments.push(...leagueTournaments)
-        }
-        setSelectedLolTournaments(tournaments)
+        const leagueTournaments = lolData.tournamentsByLeague[league] || []
+        setSelectedLolTournaments(leagueTournaments)
       } else {
         setSelectedLolTournaments([])
       }
@@ -420,6 +416,13 @@ export function GridDataProvider({ children }: GridDataProviderProps) {
       }
     })
   }, [])
+
+  // Auto-fetch LoL teams when tournaments are selected
+  useEffect(() => {
+    if (selectedLolTournaments.length > 0 && lolTeams.length === 0 && !lolTeamsLoading) {
+      fetchLolTeams()
+    }
+  }, [selectedLolTournaments, lolTeams.length, lolTeamsLoading, fetchLolTeams])
 
   // Auto-fetch Valorant teams when tournaments are selected
   useEffect(() => {
